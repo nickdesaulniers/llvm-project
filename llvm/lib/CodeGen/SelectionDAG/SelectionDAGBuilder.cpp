@@ -989,15 +989,16 @@ void RegsForValue::getCopyToRegs(SDValue Val, SelectionDAG &DAG,
     Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, Chains);
 }
 
-void RegsForValue::AddInlineAsmOperands(InlineAsm::Kind Code, bool HasMatching,
-                                        unsigned MatchingIdx, const SDLoc &dl,
+void RegsForValue::AddInlineAsmOperands(InlineAsm::Kind Code,
+                                        TargetLowering::AsmOperandInfo &OpInfo,
+                                        const SDLoc &dl,
                                         SelectionDAG &DAG,
                                         std::vector<SDValue> &Ops) const {
   const TargetLowering &TLI = DAG.getTargetLoweringInfo();
 
   InlineAsm::Flag Flag(Code, Regs.size());
-  if (HasMatching)
-    Flag.setMatchingOp(MatchingIdx);
+  if (OpInfo.isMatchingInputConstraint())
+    Flag.setMatchingOp(OpInfo.getMatchedOperand());
   else if (!Regs.empty() && Register::isVirtualRegister(Regs.front())) {
     // Put the register class of the virtual registers in the flag word.  That
     // way, later passes can recompute register class constraints for inline
@@ -9317,7 +9318,7 @@ void SelectionDAGBuilder::visitInlineAsm(const CallBase &Call,
         OpInfo.AssignedRegs.AddInlineAsmOperands(
             OpInfo.isEarlyClobber ? InlineAsm::Kind::RegDefEarlyClobber
                                   : InlineAsm::Kind::RegDef,
-            false, 0, getCurSDLoc(), DAG, AsmNodeOperands);
+            OpInfo, getCurSDLoc(), DAG, AsmNodeOperands);
       }
       break;
 
@@ -9360,9 +9361,7 @@ void SelectionDAGBuilder::visitInlineAsm(const CallBase &Call,
           SDLoc dl = getCurSDLoc();
           // Use the produced MatchedRegs object to
           MatchedRegs.getCopyToRegs(InOperandVal, DAG, dl, Chain, &Glue, &Call);
-          MatchedRegs.AddInlineAsmOperands(InlineAsm::Kind::RegUse, true,
-                                           OpInfo.getMatchedOperand(), dl, DAG,
-                                           AsmNodeOperands);
+          MatchedRegs.AddInlineAsmOperands(InlineAsm::Kind::RegUse, OpInfo, dl, DAG, AsmNodeOperands);
           break;
         }
 
@@ -9490,8 +9489,7 @@ void SelectionDAGBuilder::visitInlineAsm(const CallBase &Call,
       OpInfo.AssignedRegs.getCopyToRegs(InOperandVal, DAG, dl, Chain, &Glue,
                                         &Call);
 
-      OpInfo.AssignedRegs.AddInlineAsmOperands(InlineAsm::Kind::RegUse, false,
-                                               0, dl, DAG, AsmNodeOperands);
+      OpInfo.AssignedRegs.AddInlineAsmOperands(InlineAsm::Kind::RegUse, OpInfo, dl, DAG, AsmNodeOperands);
       break;
     }
     case InlineAsm::isClobber:
@@ -9499,7 +9497,8 @@ void SelectionDAGBuilder::visitInlineAsm(const CallBase &Call,
       // allocator is aware that the physreg got clobbered.
       if (!OpInfo.AssignedRegs.Regs.empty())
         OpInfo.AssignedRegs.AddInlineAsmOperands(InlineAsm::Kind::Clobber,
-                                                 false, 0, getCurSDLoc(), DAG,
+                                                 OpInfo,
+                                                 getCurSDLoc(), DAG,
                                                  AsmNodeOperands);
       break;
     }
