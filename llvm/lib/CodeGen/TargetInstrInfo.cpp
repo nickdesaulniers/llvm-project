@@ -1630,6 +1630,9 @@ std::string TargetInstrInfo::createMIROperandComment(
   if (F.isUseOperandTiedToDef(TiedTo))
     OS << " tiedto:$" << TiedTo;
 
+  if ((F.isRegDefKind() || F.isRegUseKind()) && F.getRegMayBeSpilled())
+    OS << " spillable";
+
   return OS.str();
 }
 
@@ -1758,4 +1761,27 @@ bool TargetInstrInfo::isMBBSafeToOutlineFrom(MachineBasicBlock &MBB,
       return false;
   }
   return true;
+}
+
+void TargetInstrInfo::spillInlineAsmOperand(llvm::MachineInstr *MI, unsigned OpIdx, int StackSlot) const {
+  assert(MI->isInlineAsm() && "unexpected opcode");
+  assert(OpIdx && "operand should have more more operand before it");
+
+  InlineAsm::Flag F(InlineAsm::Kind::Mem, 5);
+  F.setMemConstraint(InlineAsm::ConstraintCode::m);
+  MachineOperand &MD = MI->getOperand(OpIdx - 1);
+  MD.setImm(F);
+
+  MachineOperand &MO = MI->getOperand(OpIdx);
+  MO.ChangeToFrameIndex(StackSlot, MO.getTargetFlags());
+
+  // TODO: this is very x86 specific
+  MachineOperand NewOps [] = {
+    MachineOperand::CreateImm(1),
+    MachineOperand::CreateReg(0, false),
+    MachineOperand::CreateImm(0),
+    MachineOperand::CreateReg(0, false),
+  };
+  MI->insert(MI->operands_begin() + OpIdx + 1, NewOps);
+
 }

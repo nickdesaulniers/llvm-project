@@ -408,6 +408,12 @@ private:
   BlockFrequency getBrokenHintFreq(const HintsInfo &, MCRegister);
   void collectHintInfo(Register, HintsInfo &);
 
+  bool emergencySpillInlineAsmUser(const LiveInterval &VirtReg,
+                                   SmallVectorImpl<Register> &NewVRegs,
+                                   MachineInstr &MI);
+  bool emergencySpillInlineAsmUsers(const LiveInterval &VirtReg,
+                                    SmallVectorImpl<Register> &NewVRegs);
+
   /// Greedy RA statistic to remark.
   struct RAGreedyStats {
     unsigned Reloads = 0;

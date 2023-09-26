@@ -2384,6 +2384,104 @@ void RAGreedy::tryHintsRecoloring() {
   }
 }
 
+bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVectorImpl<Register> &NewVRegs, MachineInstr &MI) {
+  // Hack up the inline asm to spill.
+
+  assert(MI.isInlineAsm() && "unexpected opcode");
+  MachineOperand *MO = MI.findRegisterUseOperand(VirtReg.reg(), false, TRI);
+  assert(MO && "caller should guarantee that virtreg is operand");
+  const unsigned OpIdx = MI.getOperandNo(MO);
+  assert(OpIdx && "register operand should not be first");
+
+  // Inline asm operand descriptor.
+  MachineOperand &MD = MI.getOperand(OpIdx - 1);
+  if (MD.isImm()) {
+    InlineAsm::Flag F(MD.getImm());
+    if (!F.getRegMayBeSpilled())
+      return false;
+  }
+
+  // TODO: we probably want to use AnalyzeVirtRegInBundle (or the physreg
+  // equivalent to check if the MachineOperand Reads or Writes). i.e.
+  // if it does not read, then perhaps we can omit the spill before.
+  // If it does not write, then perhaps we can omit the reload after.
+
+  // Given
+  // %1:gr32 = COPY %2:gr32
+  // produce
+  // MOV32mr %stack.2, 1, $noreg, 0, $noreg, %2:gr32 :: (store (s32) into %stack.2)
+  // not
+  // MOV32mr %stack.2, 1, $noreg, 0, $noreg, %1:gr32 :: (store (s32) into %stack.2)
+  MachineOperand &CopyMO = *MRI->reg_begin(VirtReg.reg());
+  MachineInstr *Copy = CopyMO.getParent();
+  if (!Copy->isCopy()) {
+    return false;
+  }
+  Register Orig = Copy->getOperand(1).getReg();
+  // TODO: this can be a physreg!!!
+  int StackSlot = VRM->assignVirt2StackSlot(Orig);
+
+  // MOV32mr (spill)
+  auto It = MI.getIterator();
+  const TargetRegisterClass &RC = *MRI->getRegClass(VirtReg.reg());
+  TII->storeRegToStackSlot(*MI.getParent(), It, Orig, false, StackSlot,
+                           &RC, TRI, Register());
+  ++It;
+
+  {
+    auto Spill = MI.getIterator();
+    --Spill;
+
+    // Live Range Extension
+    LIS->getSlotIndexes()->insertMachineInstrInMaps(*Spill);
+    // TODO: should this check for physregs a la
+    // RegisterPressure::getLiveRange?
+    LiveInterval &LI = LIS->getInterval(Orig);
+    SlotIndex SI = LIS->getInstructionIndex(*Spill).getRegSlot();
+    LIS->extendToIndices(LI, {SI});
+  }
+
+  // TODO: if this is INLINEASM_BR, then we will need reloads along each
+  // indirect path.
+  // TODO: only need to reload if it's an output?
+  // MOV32rm (reload)
+  // Register NewVirt = Register::index2StackSlot(StackSlot);
+  // TII->loadRegFromStackSlot(*MI.getParent(), It, Register(), StackSlot, &RC, TRI, NewVirt);
+  // TII->loadRegFromStackSlot(*MI.getParent(), It, Register(), StackSlot, &RC, TRI, Register());
+
+  LIS->removeInterval(VirtReg.reg());
+
+  // Clean up other users of vreg
+  LiveRangeEdit LRE(&VirtReg, NewVRegs, *MF, *LIS, VRM, this, &DeadRemats);
+  SmallVector<MachineInstr *> DeadDefs;
+  for (VNInfo *VNI : VirtReg.vnis()) {
+    MachineInstr *MI = LIS->getInstructionFromIndex(VNI->def);
+    MI->addRegisterDead(VirtReg.reg(), TRI);
+    DeadDefs.push_back(MI);
+  }
+  LRE.eliminateDeadDefs(DeadDefs, {VirtReg.reg()});
+
+  /// HANDLE SPILL ^
+  /// UPDATE MI INLINEASM
+
+  TII->spillInlineAsmOperand(&MI, OpIdx, StackSlot);
+
+  // TODO: do we need to set MIOp_ExtraInfo InlineAsm::Extra_MayStore or
+  // InlineAsm::Extra_MayLoad?
+
+  dbgs() << "=========== AFTER ===============\n";
+  MI.dump();
+
+  return true;
+}
+bool RAGreedy::emergencySpillInlineAsmUsers(const LiveInterval &VirtReg, SmallVectorImpl<Register> &NewVRegs) {
+  // TODO: llvm::any_of
+  for (MachineInstr &MI : MRI->reg_nodbg_instructions(VirtReg.reg()))
+    if (MI.isInlineAsm() && emergencySpillInlineAsmUser(VirtReg, NewVRegs, MI))
+      return true;
+  return false;
+}
+
 MCRegister RAGreedy::selectOrSplitImpl(const LiveInterval &VirtReg,
                                        SmallVectorImpl<Register> &NewVRegs,
                                        SmallVirtRegSet &FixedRegisters,
@@ -2455,9 +2553,13 @@ MCRegister RAGreedy::selectOrSplitImpl(const LiveInterval &VirtReg,
       return PhysReg;
   }
 
-  // If we couldn't allocate a register from spilling, there is probably some
-  // invalid inline assembly. The base class will report it.
+  // If we couldn't allocate a register from spilling, there is may be some
+  // invalid inline assembly or assembly constraints that permit their operands
+  // to be spilled. The base class will report it.
   if (Stage >= RS_Done || !VirtReg.isSpillable()) {
+    if (emergencySpillInlineAsmUsers(VirtReg, NewVRegs))
+      return 0;
+
     return tryLastChanceRecoloring(VirtReg, Order, NewVRegs, FixedRegisters,
                                    RecolorStack, Depth);
   }

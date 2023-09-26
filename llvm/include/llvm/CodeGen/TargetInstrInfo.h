@@ -1628,6 +1628,10 @@ public:
     const char *Str, const MCAsmInfo &MAI,
     const TargetSubtargetInfo *STI = nullptr) const;
 
+  // TODO: private
+  // virtual SmallVector<MachineOperand> getInlineAsmMemoryOperands() const = 0;
+  void spillInlineAsmOperand(MachineInstr *MI, unsigned OpIdx, int StackSlot) const;
+
   /// Allocate and return a hazard recognizer to use for this target when
   /// scheduling the machine instructions before register allocation.
   virtual ScheduleHazardRecognizer *

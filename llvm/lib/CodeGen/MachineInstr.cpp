@@ -1786,6 +1786,10 @@ void MachineInstr::print(raw_ostream &OS, ModuleSlotTracker &MST,
       if (F.isUseOperandTiedToDef(TiedTo))
         OS << " tiedto:$" << TiedTo;
 
+      if ((F.isRegDefKind() || F.isRegUseKind()) && F.getRegMayBeSpilled()) {
+        OS << " spillable";
+      }
+
       OS << ']';
 
       // Compute the index of the next operand descriptor.
