@@ -1812,6 +1812,8 @@ public:
   /// preferred.
   void addOperand(const MachineOperand &Op);
 
+  void insert(mop_iterator It, ArrayRef<MachineOperand> Ops);
+
   /// Replace the instruction descriptor (thus opcode) of
   /// the current instruction with a new one.
   void setDesc(const MCInstrDesc &TID) { MCID = &TID; }
