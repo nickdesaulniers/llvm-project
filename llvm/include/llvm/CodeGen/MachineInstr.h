@@ -1374,6 +1374,8 @@ public:
   bool isStackAligningInlineAsm() const;
   InlineAsm::AsmDialect getInlineAsmDialect() const;
 
+  bool isInlineAsmOpSpillable(unsigned OpIdx) const;
+
   bool isInsertSubreg() const {
     return getOpcode() == TargetOpcode::INSERT_SUBREG;
   }

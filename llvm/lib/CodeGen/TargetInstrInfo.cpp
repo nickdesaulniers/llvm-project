@@ -1763,7 +1763,7 @@ bool TargetInstrInfo::isMBBSafeToOutlineFrom(MachineBasicBlock &MBB,
   return true;
 }
 
-void TargetInstrInfo::spillInlineAsmOperand(llvm::MachineInstr *MI, unsigned OpIdx, int StackSlot) const {
+void TargetInstrInfo::updateInlineAsmOpToFrameIndex(llvm::MachineInstr *MI, unsigned OpIdx, int StackSlot) const {
   assert(MI->isInlineAsm() && "unexpected opcode");
   assert(OpIdx && "operand should have more more operand before it");
 
@@ -1773,9 +1773,11 @@ void TargetInstrInfo::spillInlineAsmOperand(llvm::MachineInstr *MI, unsigned OpI
   MD.setImm(F);
 
   MachineOperand &MO = MI->getOperand(OpIdx);
+  assert(MO.isReg() && "should only be used to replace register operands");
   MO.ChangeToFrameIndex(StackSlot, MO.getTargetFlags());
 
   // TODO: this is very x86 specific
+  // SmallVector<MachineOperand> NewOps = {
   MachineOperand NewOps [] = {
     MachineOperand::CreateImm(1),
     MachineOperand::CreateReg(0, false),

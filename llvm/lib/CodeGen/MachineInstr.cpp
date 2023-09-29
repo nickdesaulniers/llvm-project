@@ -2500,3 +2500,9 @@ void MachineInstr::insert(mop_iterator It, ArrayRef<MachineOperand> Ops) {
   for (const MachineOperand &OpMoved : MovingOps)
     addOperand(OpMoved);
 }
+
+bool MachineInstr::isInlineAsmOpSpillable (unsigned OpIdx) const {
+  assert(isInlineAsm() && "unexpected opcode");
+  const MachineOperand &MO = getOperand(OpIdx);
+  return MO.isImm() && InlineAsm::Flag(MO.getImm()).getRegMayBeSpilled();
+}

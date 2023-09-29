@@ -2384,22 +2384,22 @@ void RAGreedy::tryHintsRecoloring() {
   }
 }
 
+// bool RAGreedy::hasSpillableInlineAsmUser()
 bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVectorImpl<Register> &NewVRegs, MachineInstr &MI) {
   // Hack up the inline asm to spill.
 
+  // Can we spill?
   assert(MI.isInlineAsm() && "unexpected opcode");
   MachineOperand *MO = MI.findRegisterUseOperand(VirtReg.reg(), false, TRI);
   assert(MO && "caller should guarantee that virtreg is operand");
   const unsigned OpIdx = MI.getOperandNo(MO);
   assert(OpIdx && "register operand should not be first");
 
-  // Inline asm operand descriptor.
-  MachineOperand &MD = MI.getOperand(OpIdx - 1);
-  if (MD.isImm()) {
-    InlineAsm::Flag F(MD.getImm());
-    if (!F.getRegMayBeSpilled())
-      return false;
-  }
+  // TODO: would this be better as a mathod of MachineOperand?
+  if (!MI.isInlineAsmOpSpillable(OpIdx - 1))
+    return false;
+
+  // Can we spill? yes, now do spill.
 
   // TODO: we probably want to use AnalyzeVirtRegInBundle (or the physreg
   // equivalent to check if the MachineOperand Reads or Writes). i.e.
@@ -2464,7 +2464,7 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
   /// HANDLE SPILL ^
   /// UPDATE MI INLINEASM
 
-  TII->spillInlineAsmOperand(&MI, OpIdx, StackSlot);
+  TII->updateInlineAsmOpToFrameIndex(&MI, OpIdx, StackSlot);
 
   // TODO: do we need to set MIOp_ExtraInfo InlineAsm::Extra_MayStore or
   // InlineAsm::Extra_MayLoad?
