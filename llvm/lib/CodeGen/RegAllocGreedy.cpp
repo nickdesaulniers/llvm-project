@@ -2386,7 +2386,10 @@ void RAGreedy::tryHintsRecoloring() {
 
 // bool RAGreedy::hasSpillableInlineAsmUser()
 bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVectorImpl<Register> &NewVRegs, MachineInstr &MI) {
+  // TODO: is there anything we can do with RegisterScavenging::spill?
   // Hack up the inline asm to spill.
+  MI.getParent()->dump();
+  dbgs() << "=========== BEFORE ===============\n";
 
   // Can we spill?
   assert(MI.isInlineAsm() && "unexpected opcode");
@@ -2418,27 +2421,52 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
     return false;
   }
   Register Orig = Copy->getOperand(1).getReg();
-  // TODO: this can be a physreg!!!
-  int StackSlot = VRM->assignVirt2StackSlot(Orig);
+
+  int StackSlot;
+  if (Orig.isVirtual()) {
+    StackSlot = VRM->assignVirt2StackSlot(Orig);
+  } else {
+    assert(Orig.isPhysical() && "expected a physical register here");
+
+    // TODO: given:
+    // %1:gr32 = COPY $eax
+    // generate:
+    // MOV32mr %stack.0.x.addr, 1, $noreg, 0, $noreg, killed renamable $eax :: (store (s32) into %ir.x.addr, !tbaa !6)
+    const TargetRegisterClass *RC = MRI->getRegClass(VirtReg.reg());
+    // const TargetRegisterClass *RC = MRI->getRegClass(Orig);
+    const unsigned Size = TRI->getSpillSize(*RC);
+    Align Alignment = TRI->getSpillAlign(*RC);
+    MachineFrameInfo &MFI = MF->getFrameInfo();
+    StackSlot = MFI.CreateSpillStackObject(Size, Alignment);
+  }
 
   // MOV32mr (spill)
-  auto It = MI.getIterator();
-  const TargetRegisterClass &RC = *MRI->getRegClass(VirtReg.reg());
-  TII->storeRegToStackSlot(*MI.getParent(), It, Orig, false, StackSlot,
-                           &RC, TRI, Register());
-  ++It;
+  // TODO: if we have a physreg, the call to eliminateDeadDefs below will
+  // mark the COPY as KILL. Make sure to spill before the copy!
+  {
+    // auto It = MI.getIterator();
+    auto It = Copy->getIterator();
+    const TargetRegisterClass &RC = *MRI->getRegClass(VirtReg.reg());
+    TII->storeRegToStackSlot(*MI.getParent(), It, Orig, false, StackSlot,
+                             &RC, TRI, Register());
+  }
 
   {
-    auto Spill = MI.getIterator();
+    auto Spill = Copy->getIterator();
+    // auto Spill = MI.getIterator();
     --Spill;
+
+    // Spill->dump();
+    // LIS->dump();
 
     // Live Range Extension
     LIS->getSlotIndexes()->insertMachineInstrInMaps(*Spill);
-    // TODO: should this check for physregs a la
-    // RegisterPressure::getLiveRange?
-    LiveInterval &LI = LIS->getInterval(Orig);
-    SlotIndex SI = LIS->getInstructionIndex(*Spill).getRegSlot();
-    LIS->extendToIndices(LI, {SI});
+
+    if (Orig.isVirtual()) {
+      LiveInterval &LI = LIS->getInterval(Orig);
+      SlotIndex SI = LIS->getInstructionIndex(*Spill).getRegSlot();
+      LIS->extendToIndices(LI, {SI});
+    }
   }
 
   // TODO: if this is INLINEASM_BR, then we will need reloads along each
@@ -2469,8 +2497,9 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
   // TODO: do we need to set MIOp_ExtraInfo InlineAsm::Extra_MayStore or
   // InlineAsm::Extra_MayLoad?
 
-  dbgs() << "=========== AFTER ===============\n";
-  MI.dump();
+  // dbgs() << "=========== AFTER ===============\n";
+  // MI.dump();
+  // MI.getParent()->dump();
 
   return true;
 }
