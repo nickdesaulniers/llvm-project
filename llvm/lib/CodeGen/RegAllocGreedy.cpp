@@ -2523,33 +2523,26 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
     TII->loadRegFromStackSlot(*MI.getParent(), ++MI.getIterator(), NewVReg,
                               StackSlot, RC, TRI, {});
 
+    // TODO: maybe we should replace the operand of the copy?
     MachineOperand &CopyMO = *MRI->reg_begin(VirtReg.reg());
-    CopyMO.setIsKill();
     MachineInstr *CopyMI = CopyMO.getParent();
-    CopyMI->eraseFromParent();
-    // CopyMI->getParent()->erase
+    assert(CopyMI->isCopy() && "expected remaining use to be a copy");
+    assert(CopyMO.isUse() && "expected remaining reference to be a use");
 
-
-    // CopyMO.getParent()->dump();
+    // MachineInstr *NewCopy = CopyMI->getParent()->clone(asdf);
+    CopyMO.setReg(NewVReg);
 
     LIS->removeInterval(VirtReg.reg());
-    // SmallVector<MachineInstr *> DeadDefs;
 
-    // DeadDefs.push_back(CopyMI);
-    // LRE.eliminateDeadDefs(DeadDefs, {VirtReg.reg()});
+    // Live Range Extension
 
-    // for (VNInfo *VNI : VirtReg.vnis()) {
-    //   MachineInstr *MI = LIS->getInstructionFromIndex(VNI->def);
-    //   dbgs() << "marking as dead: \n";
-    //   MI->dump();
-    //   VNI->markUnused();
-    //   // LIS->markValNoForDeletion(VNI);
-    //   // VirtReg.removeValNo(VNI);
-    //   // MI->addRegisterDead(VirtReg.reg(), TRI);
-    //   // DeadDefs.push_back(MI);
-    // }
-    // LRE.eliminateDeadDefs(DeadDefs, {VirtReg.reg()});
-    // return false;
+    MachineInstr *Reload = &*++MI.getIterator();
+    // Reload->dump();
+
+    // Recompute the interval for the new virtreg.
+    LIS->getSlotIndexes()->insertMachineInstrInMaps(*Reload);
+    LIS->removeInterval(NewVReg);
+    LIS->createAndComputeVirtRegInterval(NewVReg);
   }
 
   // TODO: do we need to set MIOp_ExtraInfo InlineAsm::Extra_MayStore or
