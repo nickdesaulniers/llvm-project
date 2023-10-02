@@ -2393,7 +2393,11 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
 
   // Can we spill?
   assert(MI.isInlineAsm() && "unexpected opcode");
-  MachineOperand *MO = MI.findRegisterUseOperand(VirtReg.reg(), false, TRI);
+  // TODO: could be a def!
+  MachineOperand *MO = std::find_if(MI.operands_begin(), MI.operands_end(), [&VirtReg](MachineOperand &MO) {
+    return MO.isReg() && MO.getReg() == VirtReg.reg();
+  });
+  // MachineOperand *MO = MI.findRegisterUseOperand(VirtReg.reg(), false, TRI);
   assert(MO && "caller should guarantee that virtreg is operand");
   const unsigned OpIdx = MI.getOperandNo(MO);
   assert(OpIdx && "register operand should not be first");
