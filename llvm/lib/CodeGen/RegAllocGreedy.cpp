@@ -2406,104 +2406,158 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
   if (!MI.isInlineAsmOpSpillable(OpIdx - 1))
     return false;
 
-  // Can we spill? yes, now do spill.
+  // TODO: maybe we can just use Ops rather than std::find above?
+  // the unsigned is the operandIdx
+  SmallVector<std::pair<MachineInstr*, unsigned>, 1> Ops;
+  const VirtRegInfo RI = AnalyzeVirtRegInBundle(MI, VirtReg.reg(), &Ops);
 
-  // TODO: we probably want to use AnalyzeVirtRegInBundle (or the physreg
-  // equivalent to check if the MachineOperand Reads or Writes). i.e.
   // if it does not read, then perhaps we can omit the spill before.
-  // If it does not write, then perhaps we can omit the reload after.
+  if (RI.Reads) {
+    dbgs() << "READS\n";
+    // Can we spill? yes, now do spill.
 
-  // Given
-  // %1:gr32 = COPY %2:gr32
-  // produce
-  // MOV32mr %stack.2, 1, $noreg, 0, $noreg, %2:gr32 :: (store (s32) into %stack.2)
-  // not
-  // MOV32mr %stack.2, 1, $noreg, 0, $noreg, %1:gr32 :: (store (s32) into %stack.2)
-  MachineOperand &CopyMO = *MRI->reg_begin(VirtReg.reg());
-  MachineInstr *Copy = CopyMO.getParent();
-  if (!Copy->isCopy()) {
-    return false;
+    // Given
+    // %1:gr32 = COPY %2:gr32
+    // produce
+    // MOV32mr %stack.2, 1, $noreg, 0, $noreg, %2:gr32 :: (store (s32) into %stack.2)
+    // not
+    // MOV32mr %stack.2, 1, $noreg, 0, $noreg, %1:gr32 :: (store (s32) into %stack.2)
+    MachineOperand &CopyMO = *MRI->reg_begin(VirtReg.reg());
+    MachineInstr *Copy = CopyMO.getParent();
+    if (!Copy->isCopy()) {
+      return false;
+    }
+    Register Orig = Copy->getOperand(1).getReg();
+
+    int StackSlot;
+    if (Orig.isVirtual()) {
+      StackSlot = VRM->assignVirt2StackSlot(Orig);
+    } else {
+      assert(Orig.isPhysical() && "expected a physical register here");
+
+      // TODO: given:
+      // %1:gr32 = COPY $eax
+      // generate:
+      // MOV32mr %stack.0.x.addr, 1, $noreg, 0, $noreg, killed renamable $eax :: (store (s32) into %ir.x.addr, !tbaa !6)
+      // const TargetRegisterClass *RC = MRI->getRegClass(Orig);
+      const TargetRegisterClass *RC = MRI->getRegClass(VirtReg.reg());
+      const unsigned Size = TRI->getSpillSize(*RC);
+      Align Alignment = TRI->getSpillAlign(*RC);
+      MachineFrameInfo &MFI = MF->getFrameInfo();
+      StackSlot = MFI.CreateSpillStackObject(Size, Alignment);
+    }
+
+    // MOV32mr (spill)
+    // TODO: if we have a physreg, the call to eliminateDeadDefs below will
+    // mark the COPY as KILL. Make sure to spill before the copy!
+    {
+      // auto It = MI.getIterator();
+      auto It = Copy->getIterator();
+      const TargetRegisterClass &RC = *MRI->getRegClass(VirtReg.reg());
+      TII->storeRegToStackSlot(*MI.getParent(), It, Orig, false, StackSlot,
+                               &RC, TRI, Register());
+    }
+
+    {
+      auto Spill = Copy->getIterator();
+      // auto Spill = MI.getIterator();
+      --Spill;
+
+      // Spill->dump();
+      // LIS->dump();
+
+      // Live Range Extension
+      LIS->getSlotIndexes()->insertMachineInstrInMaps(*Spill);
+
+      if (Orig.isVirtual()) {
+        LiveInterval &LI = LIS->getInterval(Orig);
+        SlotIndex SI = LIS->getInstructionIndex(*Spill).getRegSlot();
+        LIS->extendToIndices(LI, {SI});
+      }
+    }
+
+    // TODO: if this is INLINEASM_BR, then we will need reloads along each
+    // indirect path.
+    // TODO: only need to reload if it's an output?
+    // MOV32rm (reload)
+    // Register NewVirt = Register::index2StackSlot(StackSlot);
+    // TII->loadRegFromStackSlot(*MI.getParent(), It, Register(), StackSlot, &RC, TRI, NewVirt);
+    // TII->loadRegFromStackSlot(*MI.getParent(), It, Register(), StackSlot, &RC, TRI, Register());
+
+    LIS->removeInterval(VirtReg.reg());
+
+    // Clean up other users of vreg
+    LiveRangeEdit LRE(&VirtReg, NewVRegs, *MF, *LIS, VRM, this, &DeadRemats);
+    SmallVector<MachineInstr *> DeadDefs;
+    for (VNInfo *VNI : VirtReg.vnis()) {
+      MachineInstr *MI = LIS->getInstructionFromIndex(VNI->def);
+      MI->addRegisterDead(VirtReg.reg(), TRI);
+      DeadDefs.push_back(MI);
+    }
+    LRE.eliminateDeadDefs(DeadDefs, {VirtReg.reg()});
+
+    /// HANDLE SPILL ^
+    /// UPDATE MI INLINEASM
+
+    TII->updateInlineAsmOpToFrameIndex(&MI, OpIdx, StackSlot);
   }
-  Register Orig = Copy->getOperand(1).getReg();
 
-  int StackSlot;
-  if (Orig.isVirtual()) {
-    StackSlot = VRM->assignVirt2StackSlot(Orig);
-  } else {
-    assert(Orig.isPhysical() && "expected a physical register here");
 
-    // TODO: given:
-    // %1:gr32 = COPY $eax
-    // generate:
-    // MOV32mr %stack.0.x.addr, 1, $noreg, 0, $noreg, killed renamable $eax :: (store (s32) into %ir.x.addr, !tbaa !6)
+  // If it does not write, then perhaps we can omit the reload after.
+  if (RI.Writes) {
+    dbgs() << "WRITES\n";
     const TargetRegisterClass *RC = MRI->getRegClass(VirtReg.reg());
-    // const TargetRegisterClass *RC = MRI->getRegClass(Orig);
     const unsigned Size = TRI->getSpillSize(*RC);
     Align Alignment = TRI->getSpillAlign(*RC);
     MachineFrameInfo &MFI = MF->getFrameInfo();
-    StackSlot = MFI.CreateSpillStackObject(Size, Alignment);
+    int StackSlot = MFI.CreateSpillStackObject(Size, Alignment);
+
+    TII->updateInlineAsmOpToFrameIndex(&MI, OpIdx, StackSlot);
+
+    // insert reload
+
+    LiveRangeEdit LRE(&VirtReg, NewVRegs, *MF, *LIS, VRM, this, &DeadRemats);
+    Register NewVReg = LRE.createFrom(VirtReg.reg());
+
+    // TODO: this needs a slot index.
+    TII->loadRegFromStackSlot(*MI.getParent(), ++MI.getIterator(), NewVReg,
+                              StackSlot, RC, TRI, {});
+
+    MachineOperand &CopyMO = *MRI->reg_begin(VirtReg.reg());
+    CopyMO.setIsKill();
+    MachineInstr *CopyMI = CopyMO.getParent();
+    CopyMI->eraseFromParent();
+    // CopyMI->getParent()->erase
+
+
+    // CopyMO.getParent()->dump();
+
+    LIS->removeInterval(VirtReg.reg());
+    // SmallVector<MachineInstr *> DeadDefs;
+
+    // DeadDefs.push_back(CopyMI);
+    // LRE.eliminateDeadDefs(DeadDefs, {VirtReg.reg()});
+
+    // for (VNInfo *VNI : VirtReg.vnis()) {
+    //   MachineInstr *MI = LIS->getInstructionFromIndex(VNI->def);
+    //   dbgs() << "marking as dead: \n";
+    //   MI->dump();
+    //   VNI->markUnused();
+    //   // LIS->markValNoForDeletion(VNI);
+    //   // VirtReg.removeValNo(VNI);
+    //   // MI->addRegisterDead(VirtReg.reg(), TRI);
+    //   // DeadDefs.push_back(MI);
+    // }
+    // LRE.eliminateDeadDefs(DeadDefs, {VirtReg.reg()});
+    // return false;
   }
-
-  // MOV32mr (spill)
-  // TODO: if we have a physreg, the call to eliminateDeadDefs below will
-  // mark the COPY as KILL. Make sure to spill before the copy!
-  {
-    // auto It = MI.getIterator();
-    auto It = Copy->getIterator();
-    const TargetRegisterClass &RC = *MRI->getRegClass(VirtReg.reg());
-    TII->storeRegToStackSlot(*MI.getParent(), It, Orig, false, StackSlot,
-                             &RC, TRI, Register());
-  }
-
-  {
-    auto Spill = Copy->getIterator();
-    // auto Spill = MI.getIterator();
-    --Spill;
-
-    // Spill->dump();
-    // LIS->dump();
-
-    // Live Range Extension
-    LIS->getSlotIndexes()->insertMachineInstrInMaps(*Spill);
-
-    if (Orig.isVirtual()) {
-      LiveInterval &LI = LIS->getInterval(Orig);
-      SlotIndex SI = LIS->getInstructionIndex(*Spill).getRegSlot();
-      LIS->extendToIndices(LI, {SI});
-    }
-  }
-
-  // TODO: if this is INLINEASM_BR, then we will need reloads along each
-  // indirect path.
-  // TODO: only need to reload if it's an output?
-  // MOV32rm (reload)
-  // Register NewVirt = Register::index2StackSlot(StackSlot);
-  // TII->loadRegFromStackSlot(*MI.getParent(), It, Register(), StackSlot, &RC, TRI, NewVirt);
-  // TII->loadRegFromStackSlot(*MI.getParent(), It, Register(), StackSlot, &RC, TRI, Register());
-
-  LIS->removeInterval(VirtReg.reg());
-
-  // Clean up other users of vreg
-  LiveRangeEdit LRE(&VirtReg, NewVRegs, *MF, *LIS, VRM, this, &DeadRemats);
-  SmallVector<MachineInstr *> DeadDefs;
-  for (VNInfo *VNI : VirtReg.vnis()) {
-    MachineInstr *MI = LIS->getInstructionFromIndex(VNI->def);
-    MI->addRegisterDead(VirtReg.reg(), TRI);
-    DeadDefs.push_back(MI);
-  }
-  LRE.eliminateDeadDefs(DeadDefs, {VirtReg.reg()});
-
-  /// HANDLE SPILL ^
-  /// UPDATE MI INLINEASM
-
-  TII->updateInlineAsmOpToFrameIndex(&MI, OpIdx, StackSlot);
 
   // TODO: do we need to set MIOp_ExtraInfo InlineAsm::Extra_MayStore or
   // InlineAsm::Extra_MayLoad?
 
-  // dbgs() << "=========== AFTER ===============\n";
+  dbgs() << "=========== AFTER ===============\n";
   // MI.dump();
-  // MI.getParent()->dump();
+  MI.getParent()->dump();
 
   return true;
 }

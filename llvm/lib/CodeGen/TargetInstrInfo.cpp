@@ -1785,5 +1785,4 @@ void TargetInstrInfo::updateInlineAsmOpToFrameIndex(llvm::MachineInstr *MI, unsi
     MachineOperand::CreateReg(0, false),
   };
   MI->insert(MI->operands_begin() + OpIdx + 1, NewOps);
-
 }
