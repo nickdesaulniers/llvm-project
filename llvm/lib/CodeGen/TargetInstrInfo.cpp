@@ -1764,6 +1764,7 @@ bool TargetInstrInfo::isMBBSafeToOutlineFrom(MachineBasicBlock &MBB,
 }
 
 void TargetInstrInfo::updateInlineAsmOpToFrameIndex(llvm::MachineInstr *MI, unsigned OpIdx, int StackSlot) const {
+  dbgs() << __func__ << '\n';
   assert(MI->isInlineAsm() && "unexpected opcode");
   assert(OpIdx && "operand should have more more operand before it");
 
@@ -1773,6 +1774,13 @@ void TargetInstrInfo::updateInlineAsmOpToFrameIndex(llvm::MachineInstr *MI, unsi
   MD.setImm(F);
 
   MachineOperand &MO = MI->getOperand(OpIdx);
+  if (MO.isTied()) {
+    unsigned TiedTo = MI->findTiedOperandIdx(OpIdx);
+
+    MI->untieRegOperand(OpIdx);
+
+    updateInlineAsmOpToFrameIndex(MI, TiedTo, StackSlot);
+  }
   assert(MO.isReg() && "should only be used to replace register operands");
   MO.ChangeToFrameIndex(StackSlot, MO.getTargetFlags());
 
@@ -1785,4 +1793,6 @@ void TargetInstrInfo::updateInlineAsmOpToFrameIndex(llvm::MachineInstr *MI, unsi
     MachineOperand::CreateReg(0, false),
   };
   MI->insert(MI->operands_begin() + OpIdx + 1, NewOps);
+
+  // TODO: set mayread or may write?
 }

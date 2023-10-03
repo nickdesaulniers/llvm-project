@@ -2411,6 +2411,17 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
   SmallVector<std::pair<MachineInstr*, unsigned>, 1> Ops;
   const VirtRegInfo RI = AnalyzeVirtRegInBundle(MI, VirtReg.reg(), &Ops);
 
+  // TODO: what if Ops.size() > 1? This is the case for tied operands!
+  // assert(Ops.size() == 1 && "more ops than expected");
+  // dbgs() << "Ops:\n";
+  // for (auto &Op : Ops) {
+  //   dbgs() << *Op.first << " : " << Op.second << "\n";
+  // }
+
+  if (RI.Tied) {
+    dbgs() << "TIED\n";
+  }
+
   // if it does not read, then perhaps we can omit the spill before.
   if (RI.Reads) {
     dbgs() << "READS\n";
@@ -2424,9 +2435,7 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
     // MOV32mr %stack.2, 1, $noreg, 0, $noreg, %1:gr32 :: (store (s32) into %stack.2)
     MachineOperand &CopyMO = *MRI->reg_begin(VirtReg.reg());
     MachineInstr *Copy = CopyMO.getParent();
-    if (!Copy->isCopy()) {
-      return false;
-    }
+    assert(Copy->isCopy() && "unexpected first use");
     Register Orig = Copy->getOperand(1).getReg();
 
     int StackSlot;
@@ -2446,6 +2455,7 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
       MachineFrameInfo &MFI = MF->getFrameInfo();
       StackSlot = MFI.CreateSpillStackObject(Size, Alignment);
     }
+    dbgs() << "StackSlot: " << StackSlot << "\n";
 
     // MOV32mr (spill)
     // TODO: if we have a physreg, the call to eliminateDeadDefs below will
@@ -2512,7 +2522,10 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
     MachineFrameInfo &MFI = MF->getFrameInfo();
     int StackSlot = MFI.CreateSpillStackObject(Size, Alignment);
 
+    dbgs() << "StackSlot: " << StackSlot << "\n";
+    MI.getParent()->dump();
     TII->updateInlineAsmOpToFrameIndex(&MI, OpIdx, StackSlot);
+    MI.getParent()->dump();
 
     // insert reload
 
