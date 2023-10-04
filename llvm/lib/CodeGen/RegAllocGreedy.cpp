@@ -2425,6 +2425,73 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
   // if it does not read, then perhaps we can omit the spill before.
   if (RI.Reads) {
     dbgs() << "READS\n";
+
+    LiveRangeEdit LREZ(&VirtReg, NewVRegs, *MF, *LIS, VRM, this, &DeadRemats);
+    Register NewVReg = LREZ.createFrom(VirtReg.reg());
+
+    MachineOperand &CopyMO2 = *MRI->reg_begin(VirtReg.reg());
+    MachineInstr *CopyMI = CopyMO2.getParent();
+    // MachineInstr *NewCopy = new MachineInstr(*CopyMI->getMF(), *CopyMI);
+    assert(CopyMI->isCopy() && "expected remaining use to be a copy");
+    // CopyMI->dump();
+    // Assign the copy to the new VREg.
+    // CopyMI->getOperand(0).setReg(NewVReg);
+    // CopyMI->dump();
+    //
+    MachineInstr &NewCopy = CopyMI->getMF()->cloneMachineInstrBundle(*CopyMI->getParent(), CopyMI->getIterator(), *CopyMI);
+    NewCopy.getOperand(0).setReg(NewVReg);
+    LIS->getSlotIndexes()->insertMachineInstrInMaps(NewCopy);
+    // NewCopy.dump();
+
+    // Now spill NewVReg.
+    int StackSlotZ = VRM->assignVirt2StackSlot(NewVReg);
+    auto It = ++NewCopy.getIterator();
+    const TargetRegisterClass &RC = *MRI->getRegClass(VirtReg.reg());
+    TII->storeRegToStackSlot(*MI.getParent(), It, NewVReg, false, StackSlotZ,
+                             &RC, TRI, Register());
+
+    // Spill->dump();
+
+    TII->updateInlineAsmOpToFrameIndex(&MI, OpIdx, StackSlotZ);
+    // CopyMI->getParent()->dump();
+    //
+    // dbgs() << CopyMI->getNumOperands() << "\n";
+    // dbgs() << CopyMI->getOperand(0) << "\n";
+    // dbgs() << CopyMI->getOperand(1) << "\n";
+
+    MachineInstr *Spill = &*--It;
+    LIS->getSlotIndexes()->insertMachineInstrInMaps(*Spill);
+    LIS->removeInterval(NewVReg);
+    LIS->createAndComputeVirtRegInterval(NewVReg);
+
+
+
+    // Clean up other users of vreg
+    // LiveRangeEdit LRE(&VirtReg, NewVRegs, *MF, *LIS, VRM, this, &DeadRemats);
+    SmallVector<MachineInstr *> DeadDefsZ;
+    for (VNInfo *VNI : VirtReg.vnis()) {
+      MachineInstr *MI = LIS->getInstructionFromIndex(VNI->def);
+      MI->addRegisterDead(VirtReg.reg(), TRI);
+      DeadDefsZ.push_back(MI);
+    }
+    LREZ.eliminateDeadDefs(DeadDefsZ, {VirtReg.reg()});
+    LIS->removeInterval(VirtReg.reg());
+
+    LIS->dump();
+
+    // dbgs() << "a\n";
+    // TODO: should verifyUseLists(NewVReg);
+    MRI->verifyUseList(NewVReg);
+    MRI->verifyUseList(VirtReg.reg());
+    // dbgs() << "b\n";
+    return 0;
+    abort();
+    // assert(CopyMO.isUse() && "expected remaining reference to be a use");
+
+    // MachineInstr *NewCopy = CopyMI->getParent()->clone(asdf);
+    // CopyMO.setReg(NewVReg);
+
+    goto done;
     // Can we spill? yes, now do spill.
 
     // Given
@@ -2511,6 +2578,8 @@ bool RAGreedy::emergencySpillInlineAsmUser(const LiveInterval &VirtReg, SmallVec
 
     TII->updateInlineAsmOpToFrameIndex(&MI, OpIdx, StackSlot);
   }
+
+done:
 
 
   // If it does not write, then perhaps we can omit the reload after.
