@@ -5755,10 +5755,10 @@ static unsigned getConstraintPiority(TargetLowering::ConstraintType CT) {
   case TargetLowering::C_Immediate:
   case TargetLowering::C_Other:
     return 4;
+  case TargetLowering::C_RegisterClass:
+    return 3;
   case TargetLowering::C_Memory:
   case TargetLowering::C_Address:
-    return 3;
-  case TargetLowering::C_RegisterClass:
     return 2;
   case TargetLowering::C_Register:
     return 1;
@@ -5853,6 +5853,7 @@ TargetLowering::ConstraintWeight
 ///    Other         -> magic values (such as "Flag Output Operands")
 ///    Unknown       -> something we don't recognize yet and can't handle
 /// Ideally, we would pick the most specific constraint possible: if we have
+/// TODO(Nick): rewrite the below
 /// something that fits into a register, we would pick it.  The problem here
 /// is that if we have something that could either be in a register or in
 /// memory that use of the register could cause selection of *other*
