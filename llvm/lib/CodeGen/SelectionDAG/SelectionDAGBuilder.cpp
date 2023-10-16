@@ -1010,8 +1010,18 @@ void RegsForValue::AddInlineAsmOperands(InlineAsm::Kind Code,
     Flag.setRegClass(RC->getID());
   }
 
-  SDValue Res = DAG.getTargetConstant(Flag, dl, MVT::i32);
-  Ops.push_back(Res);
+  // TODO: What about RegUseEarlyClobber?
+  if (Code == InlineAsm::Kind::RegDef ||
+      Code == InlineAsm::Kind::RegUse) {
+    if (OpInfo.ConstraintType == TargetLowering::C_RegisterClass) {
+      if (llvm::is_contained(OpInfo.Codes, "m")) {
+        Flag.setRegMayBeSpilled(true);
+        // dbgs() << "Found a reg def or use where register would be used but m is in constraint list\n";
+      }
+    }
+  }
+
+  Ops.push_back(DAG.getTargetConstant(Flag, dl, MVT::i32));
 
   if (Code == InlineAsm::Kind::Clobber) {
     // Clobbers should always have a 1:1 mapping with registers, and may
