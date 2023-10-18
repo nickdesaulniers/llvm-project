@@ -514,6 +514,12 @@ bool InlineAsmLowering::lowerInlineAsm(
         const TargetRegisterClass *RC = MRI->getRegClass(OpInfo.Regs.front());
         Flag.setRegClass(RC->getID());
       }
+      if (OpInfo.ConstraintType == TargetLowering::C_RegisterClass) {
+        if (llvm::is_contained(OpInfo.Codes, "m")) {
+          Flag.setRegMayBeSpilled(true);
+          dbgs() << "Found a reg def or use where register would be used but m is in constraint list\n";
+        }
+      }
       Inst.addImm(Flag);
       if (!buildAnyextOrCopy(OpInfo.Regs[0], SourceRegs[0], MIRBuilder))
         return false;
