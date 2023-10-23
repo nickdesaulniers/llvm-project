@@ -3041,3 +3041,9 @@ RISCV::getVectorLowDemandedScalarBits(uint16_t Opcode, unsigned Log2SEW) {
     return 1U << Log2SEW;
   }
 }
+
+void RISCVInstrInfo::getFrameIndexOperands(SmallVectorImpl<MachineOperand> &Ops) const {
+  Ops.append({
+    MachineOperand::CreateImm(0),
+  });
+}

@@ -242,6 +242,8 @@ public:
   ArrayRef<std::pair<MachineMemOperand::Flags, const char *>>
   getSerializableMachineMemOperandTargetFlags() const override;
 
+  void getFrameIndexOperands(SmallVectorImpl<MachineOperand> &Ops) const override;
+
 protected:
   const RISCVSubtarget &STI;
 
