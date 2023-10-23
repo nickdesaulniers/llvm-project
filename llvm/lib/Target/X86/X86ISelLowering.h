@@ -1577,6 +1577,8 @@ namespace llvm {
       return TargetLoweringBase::getTypeToTransformTo(Context, VT);
     }
 
+  bool canFoldInlineAsmMemOp() const override { return true; }
+
   protected:
     std::pair<const TargetRegisterClass *, uint8_t>
     findRepresentativeClass(const TargetRegisterInfo *TRI,
