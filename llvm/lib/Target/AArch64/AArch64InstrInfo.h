@@ -382,6 +382,9 @@ public:
   bool isLegalAddressingMode(unsigned NumBytes, int64_t Offset,
                              unsigned Scale) const;
 
+  void
+  getFrameIndexOperands(SmallVectorImpl<MachineOperand> &Ops) const override;
+
 #define GET_INSTRINFO_HELPER_DECLS
 #include "AArch64GenInstrInfo.inc"
 

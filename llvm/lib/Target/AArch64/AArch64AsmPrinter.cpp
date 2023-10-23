@@ -993,12 +993,26 @@ bool AArch64AsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
                                               unsigned OpNum,
                                               const char *ExtraCode,
                                               raw_ostream &O) {
+  assert(MI->isInlineAsm() && "expected inline asm");
   if (ExtraCode && ExtraCode[0] && ExtraCode[0] != 'a')
     return true; // Unknown modifier.
 
   const MachineOperand &MO = MI->getOperand(OpNum);
   assert(MO.isReg() && "unexpected inline asm memory operand");
-  O << "[" << AArch64InstPrinter::getRegisterName(MO.getReg()) << "]";
+  O << "[" << AArch64InstPrinter::getRegisterName(MO.getReg());
+  assert(OpNum > 0 && "unexpected offset");
+  const MachineOperand &MD = MI->getOperand(OpNum - 1);
+  assert(MD.isImm() && "unexpected meta operand");
+  const InlineAsm::Flag F(MD.getImm());
+  const unsigned NumOps = F.getNumOperandRegisters();
+  if (NumOps == 2) {
+    assert(OpNum + 1 < MI->getNumOperands() && "missing offset operand");
+    const MachineOperand &OffsetOp = MI->getOperand(OpNum + 1);
+    assert(OffsetOp.isImm() && "unexpected inline asm memory operand");
+    if (uint64_t Offset = OffsetOp.getImm())
+      O << ", #" << Offset;
+  }
+  O << "]";
   return false;
 }
 
