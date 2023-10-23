@@ -5386,6 +5386,12 @@ public:
     return true;
   }
 
+  // Return true if a backend can combine 2 MachineOperands, a load followed by
+  // an inline asm that uses the result of the load, into one instruction.
+  virtual bool canFoldInlineAsmMemOp() const {
+    return false;
+  }
+
 private:
   SDValue foldSetCCWithAnd(EVT VT, SDValue N0, SDValue N1, ISD::CondCode Cond,
                            const SDLoc &DL, DAGCombinerInfo &DCI) const;

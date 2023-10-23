@@ -5707,10 +5707,24 @@ TargetLowering::ParseConstraints(const DataLayout &DL,
 /// over another, for the purpose of sorting them. Immediates are almost always
 /// preferrable (when they can be emitted). A higher return value means a
 /// stronger preference for one constraint type relative to another.
-/// FIXME: We should prefer registers over memory but doing so may lead to
-/// unrecoverable register exhaustion later.
-/// https://github.com/llvm/llvm-project/issues/20571
-static unsigned getConstraintPiority(TargetLowering::ConstraintType CT) {
+static unsigned preferMem(TargetLowering::ConstraintType CT) {
+  switch (CT) {
+  case TargetLowering::C_Immediate:
+  case TargetLowering::C_Other:
+    return 4;
+  case TargetLowering::C_Memory:
+  case TargetLowering::C_Address:
+    return 3;
+  case TargetLowering::C_RegisterClass:
+    return 2;
+  case TargetLowering::C_Register:
+    return 1;
+  case TargetLowering::C_Unknown:
+    return 0;
+  }
+  llvm_unreachable("Invalid constraint type");
+}
+static unsigned preferReg(TargetLowering::ConstraintType CT) {
   switch (CT) {
   case TargetLowering::C_Immediate:
   case TargetLowering::C_Other:
@@ -5726,6 +5740,13 @@ static unsigned getConstraintPiority(TargetLowering::ConstraintType CT) {
     return 0;
   }
   llvm_unreachable("Invalid constraint type");
+}
+
+static bool getConstraintPriorityPreferReg(TargetLowering::ConstraintPair a, TargetLowering::ConstraintPair b) {
+  return preferReg(a.second) > preferReg(b.second);
+}
+static bool getConstraintPriorityPreferMem(TargetLowering::ConstraintPair a, TargetLowering::ConstraintPair b) {
+  return preferMem(a.second) > preferMem(b.second);
 }
 
 /// Examine constraint type and operand type and determine a weight value.
@@ -5848,10 +5869,10 @@ TargetLowering::ConstraintGroup TargetLowering::getConstraintPreferences(
     Ret.emplace_back(Code, CType);
   }
 
-  std::stable_sort(
-      Ret.begin(), Ret.end(), [](ConstraintPair a, ConstraintPair b) {
-        return getConstraintPiority(a.second) > getConstraintPiority(b.second);
-      });
+  if (canFoldInlineAsmMemOp())
+    std::stable_sort(Ret.begin(), Ret.end(), getConstraintPriorityPreferReg);
+  else
+    std::stable_sort(Ret.begin(), Ret.end(), getConstraintPriorityPreferMem);
 
   return Ret;
 }
