@@ -141,3 +141,8 @@ void ARMInstrInfo::expandLoadStackGuard(MachineBasicBlock::iterator MI) const {
       .cloneMemRefs(*MI)
       .add(predOps(ARMCC::AL));
 }
+void ARMInstrInfo::getFrameIndexOperands(SmallVectorImpl<MachineOperand> &Ops) const {
+  Ops.append({
+    MachineOperand::CreateImm(0),
+  });
+}
