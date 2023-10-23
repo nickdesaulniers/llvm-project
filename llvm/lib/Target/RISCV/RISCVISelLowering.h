@@ -825,6 +825,8 @@ public:
                                const RISCVTargetLowering &TLI,
                                std::optional<unsigned> FirstMaskArgument);
 
+  bool canFoldInlineAsmMemOp() const override { return true; }
+
 private:
   void analyzeInputArgs(MachineFunction &MF, CCState &CCInfo,
                         const SmallVectorImpl<ISD::InputArg> &Ins, bool IsRet,

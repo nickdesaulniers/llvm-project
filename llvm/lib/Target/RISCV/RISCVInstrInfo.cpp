@@ -3141,3 +3141,9 @@ unsigned RISCV::getRVVMCOpcode(unsigned RVVPseudoOpcode) {
     return 0;
   return RVV->BaseInstr;
 }
+
+void RISCVInstrInfo::getFrameIndexOperands(SmallVectorImpl<MachineOperand> &Ops) const {
+  Ops.append({
+    MachineOperand::CreateImm(0),
+  });
+}
