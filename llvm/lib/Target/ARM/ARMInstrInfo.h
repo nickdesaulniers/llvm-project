@@ -36,6 +36,7 @@ public:
   /// always be able to get register info as well (through this method).
   ///
   const ARMRegisterInfo &getRegisterInfo() const override { return RI; }
+  void getFrameIndexOperands(SmallVectorImpl<MachineOperand> &Ops) const override;
 
 private:
   void expandLoadStackGuard(MachineBasicBlock::iterator MI) const override;
