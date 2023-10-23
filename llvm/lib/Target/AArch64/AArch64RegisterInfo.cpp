@@ -866,7 +866,9 @@ bool AArch64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   // Special handling of dbg_value, stackmap patchpoint statepoint instructions.
   if (MI.getOpcode() == TargetOpcode::STACKMAP ||
       MI.getOpcode() == TargetOpcode::PATCHPOINT ||
-      MI.getOpcode() == TargetOpcode::STATEPOINT) {
+      MI.getOpcode() == TargetOpcode::STATEPOINT ||
+      // TODO: should all other targets do this, too?
+      MI.isInlineAsm()) {
     StackOffset Offset =
         TFI->resolveFrameIndexReference(MF, FrameIndex, FrameReg,
                                         /*PreferFP=*/true,

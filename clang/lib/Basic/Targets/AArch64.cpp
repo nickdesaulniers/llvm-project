@@ -1361,6 +1361,12 @@ bool AArch64TargetInfo::validateConstraintModifier(
       if (Size == 512)
         return HasLS64;
 
+      // If rm is used for an operand of size < 64, and the operand is spilled,
+      // then the modifier would be x. It's not possible for a user to specify a
+      // modify that works for either spill or no spill.
+      if (Constraint.contains("m"))
+        return true;
+
       SuggestedModifier = "w";
       return false;
     }

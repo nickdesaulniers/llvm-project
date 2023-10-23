@@ -5615,6 +5615,11 @@ int llvm::isAArch64FrameOffsetLegal(const MachineInstr &MI,
     return AArch64FrameOffsetCannotUpdate;
   }
 
+  if (MI.isInlineAsm()) {
+    return AArch64FrameOffsetCanUpdate |
+           (SOffset ? 0 : AArch64FrameOffsetIsLegal);
+  }
+
   // Get the min/max offset and the scale.
   TypeSize ScaleValue(0U, false);
   unsigned Width;
@@ -9441,6 +9446,13 @@ bool AArch64InstrInfo::isReallyTriviallyReMaterializable(
   }
 
   return TargetInstrInfo::isReallyTriviallyReMaterializable(MI);
+}
+
+void AArch64InstrInfo::getFrameIndexOperands(
+    SmallVectorImpl<MachineOperand> &Ops) const {
+  Ops.append({
+      MachineOperand::CreateImm(0),
+  });
 }
 
 #define GET_INSTRINFO_HELPERS
