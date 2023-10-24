@@ -1567,10 +1567,9 @@ static unsigned getOffsetONFromFION(const MachineInstr &MI,
                                     unsigned FIOperandNum) {
   // Take into account whether it's an add or mem instruction
   unsigned OffsetOperandNo = (FIOperandNum == 2) ? 1 : 2;
-  if (MI.isInlineAsm())
-    OffsetOperandNo = FIOperandNum - 1;
-  else if (MI.getOpcode() == TargetOpcode::STACKMAP ||
-           MI.getOpcode() == TargetOpcode::PATCHPOINT)
+  if (MI.getOpcode() == TargetOpcode::STACKMAP ||
+      MI.getOpcode() == TargetOpcode::PATCHPOINT ||
+      MI.isInlineAsm())
     OffsetOperandNo = FIOperandNum + 1;
 
   return OffsetOperandNo;
@@ -1775,15 +1774,14 @@ PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   if (noImmForm)
     OperandBase = 1;
-  else if (OpC != TargetOpcode::INLINEASM &&
-           OpC != TargetOpcode::INLINEASM_BR) {
+  else if (MI.isInlineAsm()) {
+    OperandBase = OffsetOperandNo;
+  } else {
     assert(ImmToIdxMap.count(OpC) &&
            "No indexed form of load or store available!");
     NewOpcode = ImmToIdxMap.find(OpC)->second;
     MI.setDesc(TII.get(NewOpcode));
     OperandBase = 1;
-  } else {
-    OperandBase = OffsetOperandNo;
   }
 
   Register StackReg = MI.getOperand(FIOperandNum).getReg();

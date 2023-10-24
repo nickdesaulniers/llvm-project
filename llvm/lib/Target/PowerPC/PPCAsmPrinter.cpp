@@ -433,7 +433,19 @@ bool PPCAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI, unsigned OpNo,
   }
 
   assert(MI->getOperand(OpNo).isReg());
-  O << "0(";
+  assert(OpNo > 0 && "unexpected offset");
+  const MachineOperand &MD = MI->getOperand(OpNo - 1);
+  assert(MD.isImm() && "unexpected meta operand");
+  const InlineAsm::Flag F(MD.getImm());
+  const unsigned NumOps = F.getNumOperandRegisters();
+  int64_t Offset = 0;
+  if (NumOps == 2) {
+    assert(OpNo + 1 < MI->getNumOperands() && "missing offset operand");
+    const MachineOperand &OffsetOp = MI->getOperand(OpNo + 1);
+    assert(OffsetOp.isImm() && "unexpected inline asm memory operand");
+    Offset = OffsetOp.getImm();
+  }
+  O << Offset << "(";
   printOperand(MI, OpNo, O);
   O << ")";
   return false;

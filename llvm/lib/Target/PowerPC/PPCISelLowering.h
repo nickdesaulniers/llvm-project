@@ -1478,6 +1478,8 @@ namespace llvm {
     /// through to determine the optimal load/store instruction format.
     unsigned computeMOFlags(const SDNode *Parent, SDValue N,
                             SelectionDAG &DAG) const;
+
+    bool canFoldInlineAsmMemOp() const override { return true; }
   }; // end class PPCTargetLowering
 
   namespace PPC {
