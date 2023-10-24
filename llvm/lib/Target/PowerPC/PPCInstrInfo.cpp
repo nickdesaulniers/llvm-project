@@ -5536,3 +5536,9 @@ bool PPCInstrInfo::areMemAccessesTriviallyDisjoint(
   }
   return false;
 }
+
+void PPCInstrInfo::getFrameIndexOperands(SmallVectorImpl<MachineOperand> &Ops) const {
+  Ops.append({
+      MachineOperand::CreateImm(0),
+  });
+}

@@ -633,6 +633,8 @@ public:
   /// conditions can be understood enough produce a PipelinerLoopInfo object.
   std::unique_ptr<TargetInstrInfo::PipelinerLoopInfo>
   analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const override;
+
+  void getFrameIndexOperands(SmallVectorImpl<MachineOperand> &Ops) const override;
 };
 
 }
