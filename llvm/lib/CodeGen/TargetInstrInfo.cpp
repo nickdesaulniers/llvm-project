@@ -558,19 +558,20 @@ static MachineInstr *foldPatchpoint(MachineFunction &MF, MachineInstr &MI,
 
 static void foldInlineAsmMemOperand(MachineInstr *MI, unsigned OpNo, int FI,
                                     const TargetInstrInfo &TII) {
-  MachineOperand &MO = MI->getOperand(OpNo);
-  const VirtRegInfo &RI = AnalyzeVirtRegInBundle(*MI, MO.getReg());
+  MachineOperand *MO = &MI->getOperand(OpNo);
+  const VirtRegInfo &RI = AnalyzeVirtRegInBundle(*MI, MO->getReg());
 
   // If the machine operand is tied, untie it first.
-  if (MO.isTied()) {
+  if (MO->isTied()) {
     unsigned TiedTo = MI->findTiedOperandIdx(OpNo);
     MI->untieRegOperand(OpNo);
     // Intentional recursion!
     foldInlineAsmMemOperand(MI, TiedTo, FI, TII);
+    MO = &MI->getOperand(OpNo);
   }
 
   // Change the operand from a register to a frame index.
-  MO.ChangeToFrameIndex(FI, MO.getTargetFlags());
+  MO->ChangeToFrameIndex(FI, MO->getTargetFlags());
 
   SmallVector<MachineOperand, 4> NewOps;
   TII.getFrameIndexOperands(NewOps);
