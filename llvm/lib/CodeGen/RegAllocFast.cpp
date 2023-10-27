@@ -272,6 +272,7 @@ namespace {
     bool defineVirtReg(MachineInstr &MI, unsigned OpNum, Register VirtReg,
                        bool LookAtPhysRegUses = false);
     bool useVirtReg(MachineInstr &MI, unsigned OpNum, Register VirtReg);
+    void spillInlineAsm (MachineInstr *MI, Register VirtReg);
 
     MachineBasicBlock::iterator
     getMBBBeginInsertionPoint(MachineBasicBlock &MBB,
@@ -833,9 +834,9 @@ void RegAllocFast::allocVirtReg(MachineInstr &MI, LiveReg &LR,
   if (!BestReg) {
     // Nothing we can do: Report an error and keep going with an invalid
     // allocation.
-    if (MI.isInlineAsm())
+    if (MI.isInlineAsm()) {
       MI.emitError("inline assembly requires more registers than available");
-    else
+    } else
       MI.emitError("ran out of registers during register allocation");
 
     LR.Error = true;
@@ -889,6 +890,7 @@ bool RegAllocFast::defineLiveThroughVirtReg(MachineInstr &MI, unsigned OpNum,
                         << " (tied/earlyclobber resolution)\n");
       freePhysReg(PrevReg);
       LRI->PhysReg = 0;
+      llvm::dbgs() << __func__ << "\n";
       allocVirtReg(MI, *LRI, 0, true);
       MachineBasicBlock::iterator InsertBefore =
         std::next((MachineBasicBlock::iterator)MI.getIterator());
@@ -933,6 +935,7 @@ bool RegAllocFast::defineVirtReg(MachineInstr &MI, unsigned OpNum,
     }
   }
   if (LRI->PhysReg == 0) {
+    llvm::dbgs() << __func__ << "\n";
     allocVirtReg(MI, *LRI, 0, LookAtPhysRegUses);
     // If no physical register is available for LRI, we assign one at random
     // and bail out of this function immediately.
@@ -989,6 +992,31 @@ bool RegAllocFast::defineVirtReg(MachineInstr &MI, unsigned OpNum,
   return setPhysReg(MI, MO, PhysReg);
 }
 
+static bool spillable (const MachineInstr &MI) {
+  if (!MI.isInlineAsm())
+    return false;
+  for (unsigned I = 2, E = MI.getNumOperands(); I != E; ++I) {
+    const MachineOperand &MO = MI.getOperand(I);
+    if (MO.isReg() && MI.mayFoldInlineAsmMemOp(I))
+      return true;
+  }
+  return false;
+}
+
+void RegAllocFast::spillInlineAsm (MachineInstr *MI, Register VirtReg) {
+  for (unsigned I = 2, E = MI->getNumMemOperands(); I != E; ++I) {
+    MachineOperand &MO = MI->getOperand(I);
+    if (MO.isReg() && MO.getReg() == VirtReg && MI->mayFoldInlineAsmMemOp(I)) {
+      TII->foldMemoryOperand(*MI, {I}, getStackSpaceFor(VirtReg));
+      MachineBasicBlock *MBB = MI->getParent();
+      // MI->getParent()->dump();
+      MI->removeFromParent();
+      MBB->dump();
+      return;
+    }
+  }
+}
+
 /// Allocates a register for a VirtReg use.
 /// \return true if MI's MachineOperands were re-arranged/invalidated.
 bool RegAllocFast::useVirtReg(MachineInstr &MI, unsigned OpNum,
@@ -1011,6 +1039,12 @@ bool RegAllocFast::useVirtReg(MachineInstr &MI, unsigned OpNum,
       }
     }
   } else {
+    dbgs() << "isKill: " << MO.isKill() << "\n";
+    dbgs() << "virtreg: " << printReg(VirtReg) << "\n";
+    dbgs() << "OpNo: " << OpNum << "\n";
+    MI.dump();
+    LRI->LastUse->dump();
+    dbgs() << "asdfasdf\n";
     assert((!MO.isKill() || LRI->LastUse == &MI) && "Invalid kill flag");
   }
 
@@ -1028,8 +1062,18 @@ bool RegAllocFast::useVirtReg(MachineInstr &MI, unsigned OpNum,
                "Copy destination should already be assigned");
       }
     }
+    llvm::dbgs() << __func__ << "\n";
     allocVirtReg(MI, *LRI, Hint, false);
     if (LRI->Error) {
+      if (spillable(MI)) {
+        dbgs() << "spillable; can we recover here?\n";
+        spillInlineAsm(&MI, VirtReg);
+        LRI->Error = false;
+        // auto It = LiveVirtRegs.find(VirtReg);
+        // LiveVirtRegs.erase(It);
+        // LRI->LastUse = nullptr;
+        return true;
+      }
       const TargetRegisterClass &RC = *MRI->getRegClass(VirtReg);
       ArrayRef<MCPhysReg> AllocationOrder = RegClassInfo.getOrder(&RC);
       if (AllocationOrder.empty())
@@ -1465,6 +1509,7 @@ void RegAllocFast::allocateInstruction(MachineInstr &MI) {
         continue;
 
       assert(MO.isUndef() && "Should only have undef virtreg uses left");
+      llvm::dbgs() << __func__ << "\n";
       allocVirtRegUndef(MO);
     }
   }
