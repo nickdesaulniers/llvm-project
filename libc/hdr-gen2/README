@@ -1,0 +1,10 @@
+# Demo
+```
+$ ./libc-hdrgen3 ../include/string.h.def stdc.yml
+```
+to produce string.h to stdout.
+
+```
+$ ./libc-hdrgen3 ../include/string.h.def stdc.yml -e strlen
+```
+to produce a string.h with just `strlen`.

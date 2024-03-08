@@ -1,0 +1,9 @@
+string.h:
+  strlen:
+    returns: size_t
+    params:
+      - const char*
+  strstr:
+    returns: size_t
+    params:
+      - const char*
