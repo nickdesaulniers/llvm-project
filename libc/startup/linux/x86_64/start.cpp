@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+#include "src/__support/macros/properties/architectures.h"
 #include "src/__support/macros/attributes.h"
 #include "startup/linux/do_start.h"
 
@@ -26,8 +27,13 @@ extern "C" [[noreturn]] void _start() {
   // compilers can generate code assuming the alignment as required by the ABI.
   // If the stack pointers as setup by the OS are already aligned, then the
   // following code is a NOP.
+#ifdef LIBC_TARGET_ARCH_IS_X86_32
+  asm volatile("andl $0xfffffff0, %esp\n\t");
+  asm volatile("andl $0xfffffff0, %ebp\n\t");
+#else
   asm volatile("andq $0xfffffffffffffff0, %rsp\n\t");
   asm volatile("andq $0xfffffffffffffff0, %rbp\n\t");
+#endif
 
   LIBC_NAMESPACE::do_start();
 }
