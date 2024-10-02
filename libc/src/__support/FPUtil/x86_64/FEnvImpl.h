@@ -367,7 +367,9 @@ struct FPState {
 #else
 struct FPState {
   X87StateDescriptor x87_status;
+#ifdef __x86_64__
   uint32_t mxcsr;
+#endif
 };
 #endif // _WIN32
 
@@ -575,7 +577,9 @@ LIBC_INLINE int get_env(fenv_t *envp) {
 #else
   internal::get_x87_state_descriptor(state->x87_status);
 #endif // __APPLE__
+#ifdef __x86_64__
   state->mxcsr = internal::get_mxcsr();
+#endif
   return 0;
 }
 
@@ -636,8 +640,11 @@ LIBC_INLINE int set_env(const fenv_t *envp) {
 #endif // __APPLE__
   internal::write_x87_state_descriptor(x87_status);
 
+#ifdef __x86_64__
   // We can write the MXCSR state as is as there are no sensitive bits.
   internal::write_mxcsr(fpstate->mxcsr);
+#endif
+
   return 0;
 }
 #endif
