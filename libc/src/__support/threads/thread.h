@@ -42,7 +42,7 @@ union ThreadReturnValue {
 };
 
 #if (defined(LIBC_TARGET_ARCH_IS_AARCH64) ||                                   \
-     defined(LIBC_TARGET_ARCH_IS_X86_64) ||                                    \
+     defined(LIBC_TARGET_ARCH_IS_X86) ||                                       \
      defined(LIBC_TARGET_ARCH_IS_ANY_RISCV))
 constexpr unsigned int STACK_ALIGNMENT = 16;
 #elif defined(LIBC_TARGET_ARCH_IS_ARM)
