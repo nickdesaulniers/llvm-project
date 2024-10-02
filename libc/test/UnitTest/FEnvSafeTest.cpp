@@ -56,13 +56,13 @@ void FEnvSafeTest::expect_fenv_eq(const fenv_t &before_fenv,
 #elif defined(__APPLE__)
   EXPECT_EQ(before_state.control_word, after_state.control_word);
   EXPECT_EQ(before_state.status_word, after_state.status_word);
-  EXPECT_EQ(before_state.mxcsr, after_state.mxcsr);
+  EXPECT_EQ(before_state.get_mxcsr(), after_state.get_mxcsr());
 #else
   EXPECT_EQ(before_state.x87_status.control_word,
             after_state.x87_status.control_word);
   EXPECT_EQ(before_state.x87_status.status_word,
             after_state.x87_status.status_word);
-  EXPECT_EQ(before_state.mxcsr, after_state.mxcsr);
+  EXPECT_EQ(before_state.get_mxcsr(), after_state.get_mxcsr());
 #endif
 
 #elif defined(LIBC_TARGET_ARCH_IS_ARM) && defined(__ARM_FP)

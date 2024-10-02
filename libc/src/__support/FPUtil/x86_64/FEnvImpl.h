@@ -99,8 +99,11 @@ struct X87StateDescriptor {
   uint16_t unused1;
   uint16_t status_word;
   uint16_t unused2;
-  // TODO: Elaborate the remaining 20 bytes as required.
-  uint32_t _[5];
+  uint16_t tag_word;
+  uint16_t unused3;
+  uint32_t instruction_pointer; // mxcsr for i386-gnu-linux
+  // TODO: Elaborate the remaining 12 bytes as required.
+  uint32_t _[3];
 };
 
 LIBC_INLINE uint16_t get_x87_control_word() {
@@ -363,11 +366,37 @@ struct FPState {
   uint16_t status_word;
   uint32_t mxcsr;
   uint8_t reserved[8];
+  uint32_t get_mxcsr() const { return mxcsr; }
 };
 #else
 struct FPState {
   X87StateDescriptor x87_status;
+  // Because MXCSR is the control and status register for SSE (an architectural
+  // extension that predates i386), glibc doesn't modify the members of fenv_t
+  // for i386 to store this additional information. Instead, it smuggles it
+  // along in the fp instruction pointer field (which appears otherwise unused).
+  // If we'd like to overlay functions that operate on fenv_t on top of a glibc
+  // i386 host, then we need to match this detail of the ABI. See comments in
+  // https://sourceware.org/git/?p=glibc.git;a=blob;f=sysdeps/x86/fpu/fenv_private.h;hb=HEAD#l8
+  uint32_t get_mxcsr() const {
+#ifdef __x86_64__
+    return mxcsr;
+#else
+    return x87_status.instruction_pointer;
+#endif
+  }
+  void set_mxcsr(uint32_t m) {
+#ifdef __x86_64__
+    mxcsr = m;
+#else
+    x87_status.instruction_pointer = m;
+#endif
+  }
+
+private:
+#ifdef __x86_64__
   uint32_t mxcsr;
+#endif
 };
 #endif // _WIN32
 
@@ -575,7 +604,7 @@ LIBC_INLINE int get_env(fenv_t *envp) {
 #else
   internal::get_x87_state_descriptor(state->x87_status);
 #endif // __APPLE__
-  state->mxcsr = internal::get_mxcsr();
+  state->set_mxcsr(internal::get_mxcsr());
   return 0;
 }
 
@@ -591,7 +620,10 @@ LIBC_INLINE int set_env(const fenv_t *envp) {
     // Reset the exception flags in the status word.
     x87_status.status_word &= ~uint16_t(0x3F);
     // Reset other non-sensitive parts of the status word.
-    for (int i = 0; i < 5; i++)
+    x87_status.tag_word = 0;
+    x87_status.unused3 = 0;
+    x87_status.instruction_pointer = ~1;
+    for (int i = 0; i < 3; i++)
       x87_status._[i] = 0;
     // In the control word, we do the following:
     // 1. Mask all exceptions
@@ -629,7 +661,10 @@ LIBC_INLINE int set_env(const fenv_t *envp) {
 #else
   x87_status.status_word |= (fpstate->x87_status.status_word & 0x3F);
   // Copy other non-sensitive parts of the status word.
-  for (int i = 0; i < 5; i++)
+  x87_status.tag_word = fpstate->x87_status.tag_word;
+  x87_status.unused3 = fpstate->x87_status.unused3;
+  x87_status.instruction_pointer = fpstate->x87_status.instruction_pointer;
+  for (int i = 0; i < 3; i++)
     x87_status._[i] = fpstate->x87_status._[i];
   // We can set the x87 control word as is as there no sensitive bits.
   x87_status.control_word = fpstate->x87_status.control_word;
@@ -637,7 +672,8 @@ LIBC_INLINE int set_env(const fenv_t *envp) {
   internal::write_x87_state_descriptor(x87_status);
 
   // We can write the MXCSR state as is as there are no sensitive bits.
-  internal::write_mxcsr(fpstate->mxcsr);
+  internal::write_mxcsr(fpstate->get_mxcsr());
+
   return 0;
 }
 #endif
