@@ -14,6 +14,7 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
+[[noreturn]]
 void longjmp(jmp_buf buf, int val);
 
 } // namespace LIBC_NAMESPACE_DECL
