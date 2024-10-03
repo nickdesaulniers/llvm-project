@@ -7,15 +7,39 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/setjmp/longjmp.h"
+#include "include/llvm-libc-macros/offsetof-macro.h"
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 
-#if !defined(LIBC_TARGET_ARCH_IS_X86_64)
+#if !defined(LIBC_TARGET_ARCH_IS_X86)
 #error "Invalid file include"
 #endif
 
 namespace LIBC_NAMESPACE_DECL {
 
+#ifdef __i386__
+[[gnu::naked]]
+LLVM_LIBC_FUNCTION(void, longjmp, (jmp_buf, int val)) {
+  asm(R"(
+      mov 0x4(%%esp), %%ecx
+      mov 0x8(%%esp), %%eax
+      cmpl $0x1, %%eax
+      adcl $0x0, %%eax
+
+      mov %c[ebx](%%ecx), %%ebx
+      mov %c[esi](%%ecx), %%esi
+      mov %c[edi](%%ecx), %%edi
+      mov %c[ebp](%%ecx), %%ebp
+      mov %c[esp](%%ecx), %%esp
+
+      jmp *%c[eip](%%ecx)
+      )" ::[ebx] "i"(offsetof(__jmp_buf, ebx)),
+      [esi] "i"(offsetof(__jmp_buf, esi)), [edi] "i"(offsetof(__jmp_buf, edi)),
+      [ebp] "i"(offsetof(__jmp_buf, ebp)), [esp] "i"(offsetof(__jmp_buf, esp)),
+      [eip] "i"(offsetof(__jmp_buf, eip))
+);
+}
+#else
 LLVM_LIBC_FUNCTION(void, longjmp, (jmp_buf buf, int val)) {
   register __UINT64_TYPE__ rbx __asm__("rbx");
   register __UINT64_TYPE__ rbp __asm__("rbp");
@@ -41,5 +65,6 @@ LLVM_LIBC_FUNCTION(void, longjmp, (jmp_buf buf, int val)) {
   LIBC_INLINE_ASM("mov %1, %0\n\t" : "=r"(rsp) : "m"(buf->rsp) :);
   LIBC_INLINE_ASM("jmp *%0\n\t" : : "m"(buf->rip));
 }
+#endif
 
 } // namespace LIBC_NAMESPACE_DECL
