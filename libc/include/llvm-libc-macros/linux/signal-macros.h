@@ -79,6 +79,9 @@
 #ifdef __x86_64__
 #define MINSIGSTKSZ 2048
 #define SIGSTKSZ 8192
+#elif defined(__i386__)
+#define MINSIGSTKSZ 2048
+#define SIGSTKSZ 8192
 #elif defined(__aarch64__)
 #define MINSIGSTKSZ 5120
 #define SIGSTKSZ 16384
