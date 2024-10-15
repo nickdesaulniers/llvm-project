@@ -35,12 +35,9 @@ LLVM_LIBC_FUNCTION(int, setjmp, (jmp_buf buf)) {
       mov %%ecx, %c[eip](%%eax)
 
       xorl %%eax, %%eax
-      retl)" ::
-      [ebx] "i"(offsetof(__jmp_buf, ebx)),
-      [esi] "i"(offsetof(__jmp_buf, esi)),
-      [edi] "i"(offsetof(__jmp_buf, edi)),
-      [ebp] "i"(offsetof(__jmp_buf, ebp)),
-      [esp] "i"(offsetof(__jmp_buf, esp)),
+      retl)" ::[ebx] "i"(offsetof(__jmp_buf, ebx)),
+      [esi] "i"(offsetof(__jmp_buf, esi)), [edi] "i"(offsetof(__jmp_buf, edi)),
+      [ebp] "i"(offsetof(__jmp_buf, ebp)), [esp] "i"(offsetof(__jmp_buf, esp)),
       [eip] "i"(offsetof(__jmp_buf, eip))
       : "eax", "ecx");
 }
