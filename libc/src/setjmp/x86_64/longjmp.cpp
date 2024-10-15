@@ -32,8 +32,7 @@ LLVM_LIBC_FUNCTION(void, longjmp, (jmp_buf buf, int val)) {
       [esi] "i"(offsetof(__jmp_buf, esi)), [edi] "i"(offsetof(__jmp_buf, edi)),
       [ebp] "i"(offsetof(__jmp_buf, ebp)), [esp] "i"(offsetof(__jmp_buf, esp)),
       [eip] "i"(offsetof(__jmp_buf, eip)), [buf] "r"(buf),
-      [val] "a"(val == 0 ? 1 : val)
-      : "edx");
+      [val] "a"(val == 0 ? 1 : val));
   __builtin_unreachable();
 }
 #else
