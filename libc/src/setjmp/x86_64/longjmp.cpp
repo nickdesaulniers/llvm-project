@@ -19,17 +19,15 @@ namespace LIBC_NAMESPACE_DECL {
 
 #ifdef __i386__
 [[noreturn]]
-LLVM_LIBC_FUNCTION(void, longjmp, (jmp_buf, int val)) {
+LLVM_LIBC_FUNCTION(void, longjmp, (jmp_buf buf, int val)) {
   asm(R"(
-      mov 4(%%esp), %%edx
+      mov %c[ebx](%[buf]), %%ebx
+      mov %c[esi](%[buf]), %%esi
+      mov %c[edi](%[buf]), %%edi
+      mov %c[ebp](%[buf]), %%ebp
+      mov %c[esp](%[buf]), %%esp
 
-      mov %c[ebx](%%edx), %%ebx
-      mov %c[esi](%%edx), %%esi
-      mov %c[edi](%%edx), %%edi
-      mov %c[ebp](%%edx), %%ebp
-      mov %c[esp](%%edx), %%esp
-
-      jmp *%c[eip](%%edx)
+      jmp *%c[eip](%[buf])
       )"
       ::
       [ebx] "i"(offsetof(__jmp_buf, ebx)),
@@ -38,6 +36,7 @@ LLVM_LIBC_FUNCTION(void, longjmp, (jmp_buf, int val)) {
       [ebp] "i"(offsetof(__jmp_buf, ebp)),
       [esp] "i"(offsetof(__jmp_buf, esp)),
       [eip] "i"(offsetof(__jmp_buf, eip)),
+      [buf] "r"(buf),
       [val] "a"(val == 0 ? 1 : val) :
       "edx");
   __builtin_unreachable();
