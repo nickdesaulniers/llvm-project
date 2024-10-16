@@ -61,6 +61,8 @@ static constexpr unsigned CLONE_SYSCALL_FLAGS =
 #define CLONE_RESULT_REGISTER "t0"
 #elif defined(LIBC_TARGET_ARCH_IS_X86_64)
 #define CLONE_RESULT_REGISTER "rax"
+#elif defined(LIBC_TARGET_ARCH_IS_X86_32)
+#define CLONE_RESULT_REGISTER "eax"
 #else
 #error "CLONE_RESULT_REGISTER not defined for your target architecture"
 #endif
@@ -157,7 +159,7 @@ cleanup_thread_resources(ThreadAttributes *attrib) {
 // NOTE: For __builtin_frame_address to work reliably across compilers,
 // architectures and various optimization levels, the TU including this file
 // should be compiled with -fno-omit-frame-pointer.
-#ifdef LIBC_TARGET_ARCH_IS_X86_64
+#ifdef LIBC_TARGET_ARCH_IS_X86
   return reinterpret_cast<uintptr_t>(__builtin_frame_address(0))
          // The x86_64 call instruction pushes resume address on to the stack.
          // Next, The x86_64 SysV ABI requires that the frame pointer be pushed
@@ -296,7 +298,7 @@ int Thread::run(ThreadStyle style, ThreadRunner runner, void *arg, void *stack,
   // Also, we want the result of the syscall to be in a register as the child
   // thread gets a completely different stack after it is created. The stack
   // variables from this function will not be availalbe to the child thread.
-#if defined(LIBC_TARGET_ARCH_IS_X86_64)
+#if defined(LIBC_TARGET_ARCH_IS_X86)
   long register clone_result asm(CLONE_RESULT_REGISTER);
   clone_result = LIBC_NAMESPACE::syscall_impl<long>(
       SYS_clone, CLONE_SYSCALL_FLAGS, adjusted_stack,
