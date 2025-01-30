@@ -207,6 +207,14 @@ if(explicit_target_triple AND
   else()
     list(APPEND
          LIBC_COMPILE_OPTIONS_DEFAULT "--target=${explicit_target_triple}")
+    message(STATUS "XXX: LIBC_KERNEL_HEADERS is ${LIBC_KERNEL_HEADERS}")
+    if (LIBC_TARGET_OS_IS_LINUX AND LLVM_LIBC_FULL_BUILD AND
+        "${LIBC_KERNEL_HEADERS}" STREQUAL "/usr/include")
+      # This is because the syscall numbers are frequently different between
+      # different target architectures. Code may compile, but you'll get spooky
+      # runtime failures.
+      message(FATAL_ERROR "LIBC_KERNEL_HEADERS MUST be set when cross compiling")
+    endif()
   endif()
 endif()
 
@@ -215,7 +223,6 @@ endif()
 if (LIBC_TARGET_OS_IS_WINDOWS AND LLVM_LIBC_FULL_BUILD)
   message(FATAL_ERROR "Windows does not support full mode build.")
 endif ()
-
 
 message(STATUS
         "Building libc for ${LIBC_TARGET_ARCHITECTURE} on ${LIBC_TARGET_OS} with

@@ -28,9 +28,13 @@ function(add_unittest_framework_library name)
   if(LLVM_LIBC_FULL_BUILD)
     # TODO: Build test framework with LIBC_FULL_BUILD in full build mode after
     # making LibcFPExceptionHelpers and LibcDeathTestExecutors hermetic.
-    set(LLVM_LIBC_FULL_BUILD "")
+    # set(LLVM_LIBC_FULL_BUILD "")
     _get_common_test_compile_options(compile_options "" "")
+    # list(APPEND compile_options "-I ${CMAKE_BINARY_DIR}/libc/include/")
+    message(STATUS "XXX: LIBC_INCLUDE_DIR is: ${LIBC_INCLUDE_DIR}")
+    # message(STATUS "XXX: compile_options are: ${compile_options}")
     target_compile_options(${name}.unit PRIVATE ${compile_options})
+    target_include_directories(${name}.unit PRIVATE ${LIBC_INCLUDE_DIR})
     set(LLVM_LIBC_FULL_BUILD ON)
   else()
     _get_common_test_compile_options(compile_options "" "")
@@ -69,6 +73,7 @@ add_unittest_framework_library(
     Test.h
     TestLogger.h
   DEPENDS
+    # libc.hdr.assert_macros
     libc.src.__support.big_int
     libc.src.__support.c_string
     libc.src.__support.CPP.string
@@ -91,6 +96,9 @@ add_unittest_framework_library(
     ${libc_death_test_srcs}
   HDRS
     ExecuteFunction.h
+  DEPENDS
+    # TODO: only for fullbuild mode!
+    libc.include.assert
 )
 
 add_unittest_framework_library(
@@ -139,6 +147,8 @@ add_unittest_framework_library(
     libc.src.__support.FPUtil.fp_bits
     libc.src.__support.FPUtil.fenv_impl
     libc.hdr.types.fenv_t
+    # TODO: only for fullbuild!
+    libc.include.setjmp
 )
 
 add_unittest_framework_library(
@@ -163,6 +173,7 @@ add_unittest_framework_library(
     libc.src.__support.FPUtil.fp_bits
     libc.src.stdio.printf_core.core_structs
     libc.test.UnitTest.string_utils
+    libc.include.inttypes
 )
 
 add_unittest_framework_library(
@@ -176,6 +187,7 @@ add_unittest_framework_library(
     libc.src.__support.FPUtil.fp_bits
     libc.src.stdio.scanf_core.core_structs
     libc.test.UnitTest.string_utils
+    libc.include.inttypes
 )
 
 add_header_library(
