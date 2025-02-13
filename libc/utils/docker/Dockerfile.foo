@@ -1,0 +1,130 @@
+FROM docker.io/alpine:edge as source
+ARG LINUX_VERSION=linux-6.12.7
+RUN wget --no-clobber \
+  https://github.com/llvm/llvm-project/archive/refs/heads/main.zip
+RUN wget --no-clobber \
+  https://cdn.kernel.org/pub/linux/kernel/v6.x/${LINUX_VERSION}.tar.xz
+
+# stage 1
+FROM docker.io/alpine:edge as stage_one
+
+# unpack llvm
+COPY --from=source main.zip /
+RUN unzip -qq main.zip
+
+# unpack linux kernel
+ARG LINUX_VERSION=linux-6.12.7
+COPY --from=source ${LINUX_VERSION}.tar.xz /
+RUN tar xf ${LINUX_VERSION}.tar.xz
+
+# COPY stage1.cmake llvm-project-main/.
+RUN apk upgrade
+RUN apk add make clang rsync
+
+# Build+install kernel headers
+RUN make -C ${LINUX_VERSION} LLVM=1 INSTALL_HDR_PATH=/sysroot/usr -j$(nproc) \
+  headers_install
+RUN ls /sysroot/usr/include/ | xargs -n1 -I {} ln -s /sysroot/usr/include/{} /usr/include/. || true
+
+RUN apk add cmake ninja clang lld python3 py3-yaml
+COPY stage1.cmake llvm-project-main/.
+
+# COPY patch.txt .
+# RUN cd llvm-project-main/ && apk add patch && patch -p1 < ../patch.txt
+
+ARG LLVM_BUILD_DIR=llvm-project-main/build
+RUN cmake \
+  -B ${LLVM_BUILD_DIR} \
+  -C llvm-project-main/stage1.cmake \
+  -S llvm-project-main/runtimes \
+  -G Ninja
+RUN ninja -C ${LLVM_BUILD_DIR} libc libm
+RUN ninja -C ${LLVM_BUILD_DIR} install-libc
+
+# `apk add clang` pulls in musl-dev as a dependency. Remove it now, and reset
+# symlinks from the sysroot.
+RUN rm -rf \
+  /usr/include \
+  /usr/lib/crt1.o \
+  /usr/lib/crti.o \
+  /usr/lib/crtn.o \
+  /usr/lib/libc.a \
+  && mkdir /usr/include
+RUN ls /sysroot/usr/include/ | xargs -n1 -I {} ln -s /sysroot/usr/include/{} /usr/include/. || true
+RUN ninja -C ${LLVM_BUILD_DIR} builtins
+RUN ninja -C ${LLVM_BUILD_DIR} install-builtins
+# RUN ninja -C ${LLVM_BUILD_DIR} compiler-rt
+# RUN ninja -C ${LLVM_BUILD_DIR} install-compiler-rt
+
+# stage 2
+FROM docker.io/alpine:edge as stage_two
+COPY --from=stage_one /sysroot /sysroot
+# unpack llvm
+COPY --from=source main.zip /
+RUN unzip -qq main.zip
+RUN apk add cmake ninja clang lld python3
+ARG LLVM_BUILD_DIR=llvm-project-main/build
+
+RUN rm -rf \
+  /usr/include \
+  /usr/lib/crt1.o \
+  /usr/lib/crti.o \
+  /usr/lib/crtn.o \
+  /usr/lib/libc.a \
+  && mkdir /usr/include
+RUN ls /sysroot/usr/include/ | xargs -n1 -I {} ln -s /sysroot/usr/include/{} /usr/include/. || true
+RUN ls /sysroot/usr/lib/ | xargs -n1 -I {} ln -s /sysroot/usr/lib/{} /usr/lib/. || true
+
+COPY stage2.cmake llvm-project-main/.
+RUN cmake \
+  -B ${LLVM_BUILD_DIR} \
+  -C llvm-project-main/stage2.cmake \
+  -S llvm-project-main/runtimes \
+  -G Ninja
+RUN ninja -C ${LLVM_BUILD_DIR} cxxabi
+RUN ninja -C ${LLVM_BUILD_DIR} install-cxxabi
+RUN ninja -C ${LLVM_BUILD_DIR} cxx
+RUN ninja -C ${LLVM_BUILD_DIR} install-cxx
+
+RUN ln -s /sysroot/usr/lib/libc++abi.a /usr/lib/.
+RUN ln -s /sysroot/usr/lib/libc++.a /usr/lib/.
+RUN ln -s /sysroot/usr/include/c++ /usr/include/c++
+
+# stage3
+FROM docker.io/alpine:edge as stage_three
+COPY --from=stage_two /sysroot /sysroot
+# unpack llvm
+COPY --from=source main.zip /
+RUN unzip -qq main.zip
+RUN apk add cmake ninja clang lld python3 zlib-dev zlib-static
+
+RUN rm -rf \
+  /usr/include \
+  /usr/lib/crt1.o \
+  /usr/lib/crti.o \
+  /usr/lib/crtn.o \
+  /usr/lib/libc.a \
+  && mkdir /usr/include
+RUN ls /sysroot/usr/include/ | xargs -n1 -I {} ln -s /sysroot/usr/include/{} /usr/include/. || true
+RUN ls /sysroot/usr/lib/ | xargs -n1 -I {} ln -s /sysroot/usr/lib/{} /usr/lib/. || true
+
+COPY stage3.cmake llvm-project-main/.
+ARG LLVM_BUILD_DIR=llvm-project-main/build
+RUN cmake \
+  -B ${LLVM_BUILD_DIR} \
+  -C llvm-project-main/stage3.cmake \
+  -S llvm-project-main/llvm \
+  -G Ninja
+
+# COPY hello.c .
+# RUN apk upgrade && apk add clang
+# RUN rm -rf /usr/include /usr/lib/crt1.o /usr/lib/crti.o /usr/lib/crtn.o /usr/lib/libc.a
+# # Alpine has an out of tree patch that forces -lssp_nonshared, unless
+# # -nostdlib, -nostartfiles, or -nodefaultlibs is set. Setting those means we
+# # manually need to re-add start files and -lc.
+# # https://github.com/alpinelinux/aports/blob/master/main/clang19/30-Enable-stack-protector-by-default-for-Alpine-Linux.patch
+# RUN clang hello.c --sysroot=/sysroot -static -nostdlib /sysroot/usr/lib/crt1.o -lc
+
+# $ clang++ hello.cpp --sysroot=/sysroot/ -isystem /sysroot/usr/include/c++/v1/ -std=c++23 -nostdlib++ -static -nostdlib /sysroot/usr/lib/crt1.o -fno-rtti -fno-exceptions -lc++ -lc++abi -lc /sysroot/usr/lib/linux/libclang_rt.builtins-x86_64.a
+# #include <print>
+# int main () { std::println("hello"); }
