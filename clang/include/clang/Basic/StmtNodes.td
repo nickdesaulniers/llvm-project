@@ -112,6 +112,7 @@ def VAArgExpr : StmtNode<Expr>;
 def GenericSelectionExpr : StmtNode<Expr>;
 def PseudoObjectExpr : StmtNode<Expr>;
 def SourceLocExpr : StmtNode<Expr>;
+def TryExpr : StmtNode<Expr>;
 
 // Wrapper expressions
 def FullExpr : StmtNode<Expr, 1>;

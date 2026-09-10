@@ -59,6 +59,7 @@ class Stmt;
 class SwitchStmt;
 class TemplateParameterList;
 class VarDecl;
+class TryExpr;
 
 namespace sema {
 
@@ -237,6 +238,10 @@ public:
 
   /// The set of __block variables that are introduced in this function.
   llvm::TinyPtrVector<VarDecl *> ByrefBlockVars;
+
+  /// Try operators '?' seen in this function scope for Constraint 4 validation.
+  SmallVector<const TryExpr *, 4> TryOperators;
+  llvm::SmallPtrSet<const TryExpr *, 4> ValidatedTryOperators;
 
   /// A list of PartialDiagnostics created but delayed within the
   /// current function scope.  These diagnostics are vetted for reachability

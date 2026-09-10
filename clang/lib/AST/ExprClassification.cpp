@@ -227,6 +227,9 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
     // it and check it.
     return Cl::CL_PRValue;
 
+  case Expr::TryExprClass:
+    return Cl::CL_PRValue;
+
   // Make HLSL this reference-like
   case Expr::CXXThisExprClass:
     return Lang.HLSL ? Cl::CL_LValue : Cl::CL_PRValue;

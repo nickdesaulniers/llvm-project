@@ -640,6 +640,7 @@ private:
   CFGBlock *VisitObjCMessageExpr(ObjCMessageExpr *E, AddStmtChoice asc);
   CFGBlock *VisitPseudoObjectExpr(PseudoObjectExpr *E);
   CFGBlock *VisitReturnStmt(Stmt *S);
+  CFGBlock *VisitTryExpr(TryExpr *E, AddStmtChoice asc);
   CFGBlock *VisitCoroutineSuspendExpr(CoroutineSuspendExpr *S,
                                       AddStmtChoice asc);
   CFGBlock *VisitSEHExceptStmt(SEHExceptStmt *S);
@@ -2523,6 +2524,9 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc,
     case Stmt::CoreturnStmtClass:
       return VisitReturnStmt(S);
 
+    case Stmt::TryExprClass:
+      return VisitTryExpr(cast<TryExpr>(S), asc);
+
     case Stmt::CoyieldExprClass:
     case Stmt::CoawaitExprClass:
       return VisitCoroutineSuspendExpr(cast<CoroutineSuspendExpr>(S), asc);
@@ -3443,6 +3447,34 @@ CFGBlock *CFGBuilder::VisitReturnStmt(Stmt *S) {
         B = R;
 
   return B;
+}
+
+CFGBlock *CFGBuilder::VisitTryExpr(TryExpr *E, AddStmtChoice asc) {
+  CFGBlock *ContBlock = Block ? Block : createBlock();
+  if (asc.alwaysAdd(*this, E))
+    appendStmt(ContBlock, E);
+
+  if (badCFG)
+    return nullptr;
+
+  // Create the error block that runs destructors/cleanups and branches to Exit.
+  CFGBlock *ErrorBlock = createBlock(false);
+  {
+    SaveAndRestore save_block(Block);
+    Block = ErrorBlock;
+    addAutomaticObjHandling(ScopePos, LocalScope::const_iterator(), E);
+    if (!Block->hasNoReturnElement())
+      addSuccessor(Block, &cfg->getExit());
+    appendStmt(Block, E);
+  }
+
+  // Create the block that evaluates the try expression and branches.
+  Block = createBlock(false);
+  addSuccessor(Block, ContBlock, /*IsReachable=*/true);
+  addSuccessor(Block, ErrorBlock, /*IsReachable=*/true);
+  Block->setTerminator(E);
+
+  return Visit(E->getSubExpr(), AddStmtChoice());
 }
 
 CFGBlock *CFGBuilder::VisitCoroutineSuspendExpr(CoroutineSuspendExpr *E,

@@ -1771,6 +1771,9 @@ enum StmtCode {
   /// A PseudoObjectExpr record.
   EXPR_PSEUDO_OBJECT,
 
+  /// A TryExpr record.
+  EXPR_TRY,
+
   /// An AtomicExpr record.
   EXPR_ATOMIC,
 

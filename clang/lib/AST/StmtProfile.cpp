@@ -1537,6 +1537,10 @@ void StmtProfiler::VisitUnaryOperator(const UnaryOperator *S) {
   ID.AddInteger(S->getOpcode());
 }
 
+void StmtProfiler::VisitTryExpr(const TryExpr *S) {
+  VisitExpr(S);
+}
+
 void StmtProfiler::VisitOffsetOfExpr(const OffsetOfExpr *S) {
   VisitType(S->getTypeSourceInfo()->getType());
   unsigned n = S->getNumComponents();

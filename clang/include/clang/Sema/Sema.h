@@ -7365,6 +7365,14 @@ public:
   ExprResult ActOnUnaryOp(Scope *S, SourceLocation OpLoc, tok::TokenKind Op,
                           Expr *Input, bool IsAfterAmp = false);
 
+  /// C try operator (?) validation methods.
+  ExprResult ActOnTryExpr(Scope *S, SourceLocation OpLoc, Expr *Input);
+  ExprResult BuildTryExpr(SourceLocation OpLoc, Expr *Input);
+  void ValidateTryOperatorInExprStmt(Expr *E);
+  void ValidateTryOperatorInInit(Expr *Init);
+  void ValidateTryOperatorInReturn(Expr *RetVal);
+  void ValidateTryOperatorsInFunctionBody();
+
   /// Determine whether the given expression is a qualified member
   /// access expression, of a form that could be turned into a pointer to member
   /// with the address-of operator.

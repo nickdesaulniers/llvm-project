@@ -14356,4 +14356,35 @@ def err_cuda_device_kernel_launch_not_supported
 def err_cuda_device_kernel_launch_require_rdc
     : Error<"kernel launch from __device__ or __global__ function requires "
             "relocatable device code (i.e. requires -fgpu-rdc)">;
+
+// C try operator (?) diagnostics
+def err_try_operator_not_in_function : Error<
+  "try operator '?' may only appear within a function body">;
+def err_try_operator_invalid_operand : Error<
+  "operand of '?' operator must be an identifier designating an object or a function call">;
+def err_try_operator_in_function_designator : Error<
+  "function designator of a call operand to '?' cannot contain '?'">;
+def err_try_operator_invalid_type : Error<
+  "operand of '?' operator must have pointer or integer type (found %0)">;
+def err_try_operator_in_void_function : Error<
+  "'?' operator cannot appear in a function returning 'void'">;
+def err_try_operator_kind_mismatch : Error<
+  "operand of '?' has %select{pointer|integer}0 type (%1) but enclosing function %2 returns %select{pointer|integer|void|other}3 type (%4)">;
+def err_try_operator_invalid_position : Error<
+  "'?' operator is not allowed in this position; it may only appear as the entirety of an expression statement, the right operand of an assignment to an identifier, an initializer, or a return operand">;
+def err_try_operator_assignment_target_not_identifier : Error<
+  "left operand of assignment with '?' operator must be an identifier designating an object">;
+def err_try_operator_nested : Error<
+  "nested '?' operator is not allowed">;
+
+def err_try_operator_denylist_never_fails : Error<
+  "%0 never fails; '?' operator cannot be used">;
+def note_try_operator_remove_hint : Note<
+  "remove the '?' operator; %0 always succeeds">;
+def err_try_operator_denylist_returns_data : Error<
+  "%0 returns a count or data value rather than a status code; '?' operator cannot be used">;
+def err_try_operator_denylist_errno : Error<
+  "%0 reports errors through errno, not its return value; '?' operator cannot be used">;
+def err_try_operator_denylist_null_miss : Error<
+  "%0 returns a null pointer on a normal search miss; '?' operator cannot be used">;
 } // end of sema component.

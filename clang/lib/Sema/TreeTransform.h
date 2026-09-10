@@ -2845,6 +2845,11 @@ public:
     return getSema().BuildUnaryOp(/*Scope=*/nullptr, OpLoc, Opc, SubExpr);
   }
 
+  /// Build a new try expression (?).
+  ExprResult RebuildTryExpr(SourceLocation OpLoc, Expr *SubExpr) {
+    return getSema().BuildTryExpr(OpLoc, SubExpr);
+  }
+
   /// Build a new builtin offsetof expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -13805,6 +13810,19 @@ TreeTransform<Derived>::TransformUnaryOperator(UnaryOperator *E) {
   return getDerived().RebuildUnaryOperator(E->getOperatorLoc(),
                                            E->getOpcode(),
                                            SubExpr.get());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformTryExpr(TryExpr *E) {
+  ExprResult SubExpr = getDerived().TransformExpr(E->getSubExpr());
+  if (SubExpr.isInvalid())
+    return ExprError();
+
+  if (!getDerived().AlwaysRebuild() && SubExpr.get() == E->getSubExpr())
+    return E;
+
+  return getDerived().RebuildTryExpr(E->getOperatorLoc(), SubExpr.get());
 }
 
 template<typename Derived>

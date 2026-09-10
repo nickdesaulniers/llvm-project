@@ -709,6 +709,7 @@ public:
     LValue LV = EmitLValue(E->getSubExpr());
     return EmitScalarPrePostIncDec(E, LV, true, true);
   }
+  Value *VisitTryExpr(const TryExpr *E);
 
   llvm::Value *EmitIncDecConsiderOverflowBehavior(const UnaryOperator *E,
                                                   llvm::Value *InVal,
@@ -3759,6 +3760,37 @@ Value *ScalarExprEmitter::VisitUnaryLNot(const UnaryOperator *E) {
 
   // ZExt result to the expr type.
   return Builder.CreateZExt(BoolVal, ConvertType(E->getType()), "lnot.ext");
+}
+
+Value *ScalarExprEmitter::VisitTryExpr(const TryExpr *E) {
+  TestAndClearIgnoreResultAssign();
+
+  // Evaluate the operand exactly once.
+  Value *Val = CGF.EmitScalarExpr(E->getSubExpr());
+
+  // Check the error condition:
+  // Pointer operand: error if Val == null
+  // Integer operand: error if Val != 0
+  Value *Cond = nullptr;
+  if (E->getType()->isPointerType()) {
+    Cond = Builder.CreateIsNull(Val, "try.isnull");
+  } else {
+    Value *Zero = llvm::Constant::getNullValue(Val->getType());
+    Cond = Builder.CreateICmpNE(Val, Zero, "try.iserr");
+  }
+
+  llvm::BasicBlock *ErrBB = CGF.createBasicBlock("try.error");
+  llvm::BasicBlock *ContBB = CGF.createBasicBlock("try.cont");
+
+  Builder.CreateCondBr(Cond, ErrBB, ContBB);
+
+  // Error block: store return value, run cleanups, branch to return block
+  CGF.EmitBlock(ErrBB);
+  CGF.EmitTryOperatorEarlyReturn(E->getBeginLoc(), Val, E->getType());
+
+  // Success block: return Val for further evaluation
+  CGF.EmitBlock(ContBB);
+  return Val;
 }
 
 Value *ScalarExprEmitter::VisitOffsetOfExpr(OffsetOfExpr *E) {

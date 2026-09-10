@@ -416,7 +416,9 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
         //   logical-OR-expression '?' expression ':' conditional-expression
         // In particular, the RHS of the '?' is 'expression', not
         // 'logical-OR-expression' as we might expect.
+        ++PendingTernaryColonCount;
         TernaryMiddle = ParseExpression();
+        --PendingTernaryColonCount;
       } else {
         // Special case handling of "X ? Y : Z" where Y is empty:
         //   logical-OR-expression '?' ':' conditional-expression   [GNU]
@@ -2074,6 +2076,71 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       }
       ConsumeToken();
       break;
+    case tok::question: { // postfix-expression: postfix-expression '?'
+      if (!getLangOpts().C2y || getLangOpts().CPlusPlus)
+        return LHS;
+
+      if (NextToken().is(tok::colon))
+        return LHS;
+
+      if (tok::isAnyIdentifier(NextToken().getKind()) ||
+          tok::isLiteral(NextToken().getKind()) ||
+          tok::getKeywordSpelling(NextToken().getKind()) != nullptr)
+        return LHS;
+
+      bool IsTryOp = false;
+      if (NextToken().isOneOf(tok::semi, tok::comma, tok::r_paren,
+                              tok::r_square, tok::r_brace, tok::arrow,
+                              tok::period, tok::question)) {
+        IsTryOp = true;
+      } else {
+        // Disambiguate try operator vs ternary conditional expression.
+        RevertingTentativeParsingAction TPA(*this);
+        ConsumeToken(); // consume '?'
+
+        unsigned Depth = 0;
+        unsigned QuestionsSeen = 0;
+        unsigned ColonsSeen = 0;
+
+        while (Tok.isNot(tok::eof)) {
+          if (Tok.isOneOf(tok::l_paren, tok::l_square, tok::l_brace)) {
+            ++Depth;
+          } else if (Tok.isOneOf(tok::r_paren, tok::r_square, tok::r_brace)) {
+            if (Depth == 0)
+              break; // Closing delimiter of an enclosing expression
+            --Depth;
+          } else if (Depth == 0) {
+            if (Tok.is(tok::semi)) {
+              break; // End of statement
+            } else if (Tok.is(tok::question)) {
+              if (!NextToken().isOneOf(tok::semi, tok::comma, tok::r_paren,
+                                       tok::r_square, tok::r_brace, tok::arrow,
+                                       tok::period, tok::question))
+                ++QuestionsSeen;
+            } else if (Tok.is(tok::colon)) {
+              ++ColonsSeen;
+            }
+          }
+          ConsumeAnyToken();
+        }
+
+        unsigned ColonsNeeded = QuestionsSeen + 1 + PendingTernaryColonCount;
+        IsTryOp = (ColonsSeen < ColonsNeeded);
+      }
+
+      if (!IsTryOp)
+        return LHS;
+
+      if (!LHS.isInvalid()) {
+        Expr *Arg = LHS.get();
+        LHS = Actions.ActOnTryExpr(getCurScope(), Tok.getLocation(), Arg);
+        if (LHS.isInvalid())
+          LHS = Actions.CreateRecoveryExpr(Arg->getBeginLoc(),
+                                           Tok.getLocation(), Arg);
+      }
+      ConsumeToken();
+      break;
+    }
     }
   }
 }

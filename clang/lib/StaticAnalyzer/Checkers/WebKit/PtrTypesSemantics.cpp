@@ -803,8 +803,11 @@ public:
 
   bool VisitUnaryOperator(const UnaryOperator *UO) {
     // Unary operators are trivial if its operand is trivial except co_await.
-    return UO->getOpcode() != UO_Coawait && Visit(UO->getSubExpr());
+    return UO->getOpcode() != UO_Coawait &&
+           Visit(UO->getSubExpr());
   }
+
+  bool VisitTryExpr(const TryExpr *) { return false; }
 
   bool VisitBinaryOperator(const BinaryOperator *BO) {
     // Binary operators are trivial if their operands are trivial.

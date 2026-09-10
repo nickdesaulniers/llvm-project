@@ -14075,6 +14075,9 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init, bool DirectInit) {
     return;
   }
 
+  if (Init)
+    ValidateTryOperatorInInit(Init);
+
   if (auto *Method = dyn_cast<CXXMethodDecl>(RealDecl)) {
     if (!Method->isInvalidDecl()) {
       // Pure-specifiers are handled in ActOnPureSpecifier.
@@ -16845,6 +16848,9 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body, bool IsInstantiation,
                                     bool RetainFunctionScopeInfo) {
   FunctionScopeInfo *FSI = getCurFunction();
   FunctionDecl *FD = dcl ? dcl->getAsFunction() : nullptr;
+
+  if (FSI && !getLangOpts().CPlusPlus)
+    ValidateTryOperatorsInFunctionBody();
 
   if (FSI->UsesFPIntrin && FD && !FD->hasAttr<StrictFPAttr>())
     FD->addAttr(StrictFPAttr::CreateImplicit(Context));

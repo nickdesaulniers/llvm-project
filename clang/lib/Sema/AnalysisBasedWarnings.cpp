@@ -646,7 +646,7 @@ static ControlFlowKind CheckFallThrough(AnalysisDeclContext &AC) {
 
     CFGStmt CS = ri->castAs<CFGStmt>();
     const Stmt *S = CS.getStmt();
-    if (isa<ReturnStmt>(S) || isa<CoreturnStmt>(S)) {
+    if (isa<ReturnStmt>(S) || isa<CoreturnStmt>(S) || isa<TryExpr>(S)) {
       HasLiveReturn = true;
       continue;
     }

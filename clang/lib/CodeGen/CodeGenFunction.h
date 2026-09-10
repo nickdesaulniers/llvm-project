@@ -3685,6 +3685,8 @@ public:
   void EmitDoStmt(const DoStmt &S, ArrayRef<const Attr *> Attrs = {});
   void EmitForStmt(const ForStmt &S, ArrayRef<const Attr *> Attrs = {});
   void EmitReturnStmt(const ReturnStmt &S);
+  void EmitTryOperatorEarlyReturn(SourceLocation Loc, llvm::Value *Val,
+                                  QualType ValTy);
   void EmitDeclStmt(const DeclStmt &S);
   void EmitBreakStmt(const BreakStmt &S);
   void EmitContinueStmt(const ContinueStmt &S);

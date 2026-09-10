@@ -1728,6 +1728,44 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
   EmitBranchThroughCleanup(ReturnBlock);
 }
 
+void CodeGenFunction::EmitTryOperatorEarlyReturn(SourceLocation Loc,
+                                                llvm::Value *Val,
+                                                QualType ValTy) {
+  ApplyAtomGroup Grp(getDebugInfo());
+  if (requiresReturnValueCheck()) {
+    llvm::Constant *SLoc = EmitCheckSourceLocation(Loc);
+    auto *SLocPtr =
+        new llvm::GlobalVariable(CGM.getModule(), SLoc->getType(), false,
+                                 llvm::GlobalVariable::PrivateLinkage, SLoc);
+    SLocPtr->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+    CGM.getSanitizerMetadata()->disableSanitizerForGlobal(SLocPtr);
+    if (ReturnLocation.isValid())
+      Builder.CreateStore(SLocPtr, ReturnLocation);
+  }
+
+  if (ReturnValue.isValid()) {
+    llvm::Type *RetTy = ConvertType(FnRetTy);
+    llvm::Value *RetVal = nullptr;
+    if (FnRetTy->isPointerType()) {
+      RetVal = llvm::ConstantPointerNull::get(cast<llvm::PointerType>(RetTy));
+    } else if (FnRetTy->isBooleanType()) {
+      RetVal = Builder.CreateIsNotNull(Val, "try.tobool");
+    } else {
+      RetVal = Builder.CreateIntCast(
+          Val, RetTy, ValTy->isSignedIntegerOrEnumerationType(), "try.retcast");
+    }
+
+    if (CurFnInfo->getReturnInfo().getKind() == ABIArgInfo::Indirect) {
+      EmitStoreOfScalar(RetVal, MakeAddrLValue(ReturnValue, FnRetTy),
+                        /*isInit=*/false);
+    } else {
+      Builder.CreateStore(RetVal, ReturnValue);
+    }
+  }
+
+  EmitBranchThroughCleanup(ReturnBlock);
+}
+
 void CodeGenFunction::EmitDeclStmt(const DeclStmt &S) {
   // As long as debug info is modeled with instructions, we have to ensure we
   // have a place to insert here and write the stop point here.

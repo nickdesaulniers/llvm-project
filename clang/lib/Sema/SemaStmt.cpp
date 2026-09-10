@@ -4008,6 +4008,9 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp,
   CheckInvalidBuiltinCountedByRef(RetVal.get(),
                                   BuiltinCountedByRefKind::ReturnArg);
 
+  if (RetVal.isUsable())
+    ValidateTryOperatorInReturn(RetVal.get());
+
   StmtResult R =
       BuildReturnStmt(ReturnLoc, RetVal.get(), /*AllowRecovery=*/true);
   if (R.isInvalid() || ExprEvalContexts.back().isDiscardedStatementContext())

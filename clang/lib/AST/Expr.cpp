@@ -2690,6 +2690,8 @@ bool Expr::isUnusedResultAWarning(const Expr *&WarnE, SourceLocation &Loc,
   case ChooseExprClass:
     return cast<ChooseExpr>(this)->getChosenSubExpr()->
       isUnusedResultAWarning(WarnE, Loc, R1, R2, Ctx);
+  case TryExprClass:
+    return false;
   case UnaryOperatorClass: {
     const UnaryOperator *UO = cast<UnaryOperator>(this);
 
@@ -2910,6 +2912,8 @@ bool Expr::isUnusedResultAWarning(const Expr *&WarnE, SourceLocation &Loc,
     if (auto *BO = dyn_cast<BinaryOperator>(POE->getSyntacticForm()))
       if (BO->isAssignmentOp())
         return false;
+    if (isa<TryExpr>(POE->getSyntacticForm()))
+      return false;
     if (auto *UO = dyn_cast<UnaryOperator>(POE->getSyntacticForm()))
       if (UO->isIncrementDecrementOp())
         return false;
@@ -3875,10 +3879,15 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
     // These have a side-effect if any subexpression does.
     break;
 
-  case UnaryOperatorClass:
-    if (cast<UnaryOperator>(this)->isIncrementDecrementOp())
+  case TryExprClass:
+    return true;
+
+  case UnaryOperatorClass: {
+    const auto *UO = cast<UnaryOperator>(this);
+    if (UO->isIncrementDecrementOp())
       return true;
     break;
+  }
 
   case BinaryOperatorClass:
     if (cast<BinaryOperator>(this)->isAssignmentOp())

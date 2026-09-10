@@ -22471,6 +22471,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::MaterializeTemporaryExprClass:
   case Expr::PseudoObjectExprClass:
   case Expr::AtomicExprClass:
+  case Expr::TryExprClass:
   case Expr::LambdaExprClass:
   case Expr::CXXFoldExprClass:
   case Expr::CoawaitExprClass:

@@ -1127,6 +1127,8 @@ StmtResult Parser::handleExprStmt(ExprResult E, ParsedStmtContext StmtCtx) {
 
   if (IsStmtExprResult)
     E = Actions.ActOnStmtExprResult(E);
+  if (E.isUsable())
+    Actions.ValidateTryOperatorInExprStmt(E.get());
   return Actions.ActOnExprStmt(E, /*DiscardedValue=*/!IsStmtExprResult);
 }
 

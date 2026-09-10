@@ -867,6 +867,13 @@ void ASTStmtWriter::VisitUnaryOperator(UnaryOperator *E) {
   Code = serialization::EXPR_UNARY_OPERATOR;
 }
 
+void ASTStmtWriter::VisitTryExpr(TryExpr *E) {
+  VisitExpr(E);
+  Record.AddStmt(E->getSubExpr());
+  Record.AddSourceLocation(E->getOperatorLoc());
+  Code = serialization::EXPR_TRY;
+}
+
 void ASTStmtWriter::VisitOffsetOfExpr(OffsetOfExpr *E) {
   VisitExpr(E);
   Record.push_back(E->getNumComponents());

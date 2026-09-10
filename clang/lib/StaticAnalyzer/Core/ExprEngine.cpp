@@ -1145,6 +1145,7 @@ static bool shouldJustCallCheckers(const Stmt *S, VisitKind K) {
   case Stmt::SEHExceptStmtClass:
   case Stmt::SEHLeaveStmtClass:
   case Stmt::SEHFinallyStmtClass:
+  case Stmt::TryExprClass:
   case Stmt::CXXExpansionStmtPatternClass:
   case Stmt::CXXExpansionStmtInstantiationClass:
   case Stmt::CXXExpansionSelectExprClass:
@@ -2053,6 +2054,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::SEHExceptStmtClass:
     case Stmt::SEHLeaveStmtClass:
     case Stmt::SEHFinallyStmtClass:
+    case Stmt::TryExprClass:
     case Stmt::CXXExpansionStmtPatternClass:
     case Stmt::CXXExpansionStmtInstantiationClass:
     case Stmt::CXXExpansionSelectExprClass:

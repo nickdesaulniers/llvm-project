@@ -2273,6 +2273,43 @@ public:
   }
 };
 
+/// TryExpr - Represents the C2y try operator ('?'), a postfix expression that
+/// checks if its operand represents an error (null for pointer, non-zero for
+/// integer) and conditionally performs an early return from the enclosing function.
+class TryExpr : public Expr {
+  SourceLocation OpLoc;
+  Stmt *Val;
+
+public:
+  TryExpr(Expr *val, SourceLocation opLoc, QualType ty, ExprValueKind vk,
+          ExprObjectKind ok)
+      : Expr(TryExprClass, ty, vk, ok), OpLoc(opLoc), Val(val) {
+    setDependence(computeDependence(this));
+  }
+
+  explicit TryExpr(EmptyShell Empty) : Expr(TryExprClass, Empty) {}
+
+  const Expr *getSubExpr() const { return cast<Expr>(Val); }
+  Expr *getSubExpr() { return cast<Expr>(Val); }
+  void setSubExpr(Expr *E) { Val = E; }
+
+  SourceLocation getOperatorLoc() const { return OpLoc; }
+  void setOperatorLoc(SourceLocation L) { OpLoc = L; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return Val->getBeginLoc(); }
+  SourceLocation getEndLoc() const LLVM_READONLY { return OpLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == TryExprClass;
+  }
+
+  // Iterators
+  child_range children() { return child_range(&Val, &Val + 1); }
+  const_child_range children() const {
+    return const_child_range(&Val, &Val + 1);
+  }
+};
+
 /// UnaryOperator - This represents the unary-expression's (except sizeof and
 /// alignof), the postinc/postdec operators from postfix-expression, and various
 /// extensions.

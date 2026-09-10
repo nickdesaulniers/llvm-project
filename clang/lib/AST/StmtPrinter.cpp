@@ -1666,6 +1666,11 @@ void StmtPrinter::VisitUnaryOperator(UnaryOperator *Node) {
     OS << UnaryOperator::getOpcodeStr(Node->getOpcode());
 }
 
+void StmtPrinter::VisitTryExpr(TryExpr *Node) {
+  PrintExpr(Node->getSubExpr());
+  OS << "?";
+}
+
 void StmtPrinter::VisitOffsetOfExpr(OffsetOfExpr *Node) {
   OS << "__builtin_offsetof(";
   Node->getTypeSourceInfo()->getType().print(OS, Policy);

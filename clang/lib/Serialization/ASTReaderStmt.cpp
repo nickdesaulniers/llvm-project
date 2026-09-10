@@ -766,6 +766,12 @@ void ASTStmtReader::VisitUnaryOperator(UnaryOperator *E) {
         FPOptionsOverride::getFromOpaqueInt(Record.readInt()));
 }
 
+void ASTStmtReader::VisitTryExpr(TryExpr *E) {
+  VisitExpr(E);
+  E->setSubExpr(Record.readSubExpr());
+  E->setOperatorLoc(readSourceLocation());
+}
+
 void ASTStmtReader::VisitOffsetOfExpr(OffsetOfExpr *E) {
   VisitExpr(E);
   assert(E->getNumComponents() == Record.peekInt());
@@ -4552,6 +4558,10 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = PseudoObjectExpr::Create(Context, Empty, numSemanticExprs);
       break;
     }
+
+    case EXPR_TRY:
+      S = new (Context) TryExpr(Empty);
+      break;
 
     case EXPR_ATOMIC:
       S = new (Context) AtomicExpr(Empty);

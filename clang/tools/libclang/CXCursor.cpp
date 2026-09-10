@@ -423,6 +423,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     break;
 
   case Stmt::UnaryOperatorClass:
+  case Stmt::TryExprClass:
     K = CXCursor_UnaryOperator;
     break;
 

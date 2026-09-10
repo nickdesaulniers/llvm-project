@@ -16592,6 +16592,313 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
   return UO;
 }
 
+// Helpers for C Try Operator (?) validation.
+ExprResult Sema::ActOnTryExpr(Scope *S, SourceLocation OpLoc, Expr *Input) {
+  ExprResult Result = MaybeConvertParenListExprToParenExpr(S, Input);
+  if (Result.isInvalid())
+    return ExprError();
+  Input = Result.get();
+
+  return BuildTryExpr(OpLoc, Input);
+}
+
+ExprResult Sema::BuildTryExpr(SourceLocation OpLoc, Expr *Input) {
+  // Constraint 1: The ? operator shall appear only within the body of a function.
+  FunctionDecl *CurFD = getCurFunctionDecl();
+  FunctionScopeInfo *CurFSI = getCurFunction();
+  if (!CurFD || !CurFSI) {
+    Diag(OpLoc, diag::err_try_operator_not_in_function);
+    return ExprError();
+  }
+
+  // Constraint 2: The operand of ?, after any enclosing parentheses are removed,
+  // shall be either (a) an identifier designating an object, or (b) a function-call
+  // expression whose function designator does not itself contain a ? operator.
+  Expr *Bare = Input->IgnoreParens();
+  bool IsId = false;
+  bool IsCall = false;
+
+  if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Bare)) {
+    if (isa<VarDecl>(DRE->getDecl()))
+      IsId = true;
+  }
+
+  if (CallExpr *CE = dyn_cast<CallExpr>(Bare)) {
+    IsCall = true;
+    // Check function designator does not contain ?
+    Expr *Callee = CE->getCallee();
+    auto ContainsTry = [](auto &Self, const Stmt *S) -> bool {
+      if (!S) return false;
+      if (isa<TryExpr>(S))
+        return true;
+      for (const Stmt *Child : S->children()) {
+        if (Self(Self, Child))
+          return true;
+      }
+      return false;
+    };
+    if (ContainsTry(ContainsTry, Callee)) {
+      Diag(OpLoc, diag::err_try_operator_in_function_designator);
+      return ExprError();
+    }
+
+    // §4.2 Standard library denylist check.
+    FunctionDecl *CalleeFD = CE->getDirectCallee();
+    if (!CalleeFD)
+      CalleeFD = dyn_cast_or_null<FunctionDecl>(CE->getCalleeDecl());
+    if (!CalleeFD) {
+      if (auto *DRE = dyn_cast<DeclRefExpr>(CE->getCallee()->IgnoreParenCasts()))
+        CalleeFD = dyn_cast<FunctionDecl>(DRE->getDecl());
+    }
+    if (CalleeFD) {
+      StringRef CalleeName = CalleeFD->getName();
+      StringRef BaseName = CalleeName;
+      if (BaseName.starts_with("__builtin_"))
+        BaseName = BaseName.drop_front(10);
+
+      if (llvm::is_contained({
+            "strlen", "strcpy", "strcat", "memcpy", "memmove", "memset",
+            "isdigit", "isalpha", "isspace", "isupper", "islower", "isalnum",
+            "ispunct", "iscntrl", "isxdigit", "toupper", "tolower",
+            "abs", "labs", "llabs", "fabs", "rand"
+          }, BaseName)) {
+        Diag(OpLoc, diag::err_try_operator_denylist_never_fails) << CalleeFD;
+        Diag(OpLoc, diag::note_try_operator_remove_hint) << CalleeFD;
+        return ExprError();
+      }
+
+      if (llvm::is_contained({
+            "printf", "fprintf", "sprintf", "snprintf", "fgetc", "getchar",
+            "getc", "fread", "fwrite"
+          }, BaseName)) {
+        Diag(OpLoc, diag::err_try_operator_denylist_returns_data) << CalleeFD;
+        return ExprError();
+      }
+
+      if (llvm::is_contained({
+            "strtol", "strtoll", "strtoul", "strtoull", "strtof", "strtod", "strtold"
+          }, BaseName)) {
+        Diag(OpLoc, diag::err_try_operator_denylist_errno) << CalleeFD;
+        return ExprError();
+      }
+
+      if (llvm::is_contained({
+            "memchr", "strchr", "strrchr", "strstr", "strpbrk", "wcschr",
+            "wcsrchr", "wcsstr", "wcspbrk", "wmemchr", "bsearch", "getenv",
+            "strtok", "strtok_s", "wcstok"
+          }, BaseName)) {
+        Diag(OpLoc, diag::err_try_operator_denylist_null_miss) << CalleeFD;
+        return ExprError();
+      }
+    }
+  }
+
+  if (!IsId && !IsCall) {
+    Diag(OpLoc, diag::err_try_operator_invalid_operand);
+    return ExprError();
+  }
+
+  // Lvalue conversion removes qualifiers and atomicity.
+  ExprResult InputRes = DefaultLvalueConversion(Input);
+  if (InputRes.isInvalid())
+    return ExprError();
+  Input = InputRes.get();
+
+  QualType OpTy = Input->getType();
+  bool OpIsPtr = OpTy->isPointerType();
+  bool OpIsInt = OpTy->isIntegerType();
+
+  if (!OpIsPtr && !OpIsInt) {
+    Diag(OpLoc, diag::err_try_operator_invalid_type) << OpTy;
+    return ExprError();
+  }
+
+  // Constraint 3: Return type check.
+  QualType RetTy = CurFD->getReturnType();
+  if (RetTy->isVoidType()) {
+    Diag(OpLoc, diag::err_try_operator_in_void_function);
+    return ExprError();
+  }
+
+  bool RetIsPtr = RetTy->isPointerType();
+  bool RetIsInt = RetTy->isIntegerType();
+
+  if ((OpIsPtr && !RetIsPtr) || (OpIsInt && !RetIsInt)) {
+    unsigned OpKindSelect = OpIsPtr ? 0 : 1;
+    unsigned RetKindSelect = RetIsPtr ? 0 : (RetIsInt ? 1 : (RetTy->isVoidType() ? 2 : 3));
+    Diag(OpLoc, diag::err_try_operator_kind_mismatch)
+        << OpKindSelect << OpTy << CurFD->getDeclName() << RetKindSelect << RetTy;
+    return ExprError();
+  }
+
+  CheckArrayAccess(Input);
+
+  auto *TE = new (Context) TryExpr(Input, OpLoc, OpTy, VK_PRValue, OK_Ordinary);
+  CurFSI->TryOperators.push_back(TE);
+  return TE;
+}
+
+static const TryExpr *extractTryOperatorChain(const Expr *E) {
+  if (!E) return nullptr;
+  E = E->IgnoreParens();
+
+  if (const auto *TE = dyn_cast<TryExpr>(E)) {
+    return TE;
+  }
+
+  if (const auto *ICE = dyn_cast<ImplicitCastExpr>(E)) {
+    return extractTryOperatorChain(ICE->getSubExpr());
+  }
+
+  if (const auto *ME = dyn_cast<MemberExpr>(E)) {
+    return extractTryOperatorChain(ME->getBase());
+  }
+  if (const auto *ASE = dyn_cast<ArraySubscriptExpr>(E)) {
+    return extractTryOperatorChain(ASE->getBase());
+  }
+  if (const auto *CE = dyn_cast<CallExpr>(E)) {
+    return extractTryOperatorChain(CE->getCallee());
+  }
+
+  return nullptr;
+}
+
+static void collectTryOperators(const Stmt *S, SmallVectorImpl<const TryExpr *> &TryOps) {
+  if (!S) return;
+  if (const auto *TE = dyn_cast<TryExpr>(S)) {
+    TryOps.push_back(TE);
+  }
+  for (const Stmt *Child : S->children()) {
+    collectTryOperators(Child, TryOps);
+  }
+}
+
+void Sema::ValidateTryOperatorInExprStmt(Expr *E) {
+  FunctionScopeInfo *CurFSI = getCurFunction();
+  if (!CurFSI || !E)
+    return;
+
+  E = E->IgnoreParens();
+  if (auto *BO = dyn_cast<BinaryOperator>(E)) {
+    if (BO->getOpcode() == BO_Assign) {
+      Expr *LHS = BO->getLHS()->IgnoreParens();
+      Expr *RHS = BO->getRHS()->IgnoreParens();
+
+      SmallVector<const TryExpr *, 4> RHSTryOps;
+      collectTryOperators(RHS, RHSTryOps);
+      if (!RHSTryOps.empty()) {
+        bool LHSIsId = false;
+        if (auto *DRE = dyn_cast<DeclRefExpr>(LHS)) {
+          if (isa<VarDecl>(DRE->getDecl()))
+            LHSIsId = true;
+        }
+        if (!LHSIsId) {
+          Diag(BO->getOperatorLoc(), diag::err_try_operator_assignment_target_not_identifier);
+          for (auto *TE : RHSTryOps)
+            CurFSI->ValidatedTryOperators.insert(TE);
+          return;
+        }
+
+        const TryExpr *RootTE = extractTryOperatorChain(RHS);
+        if (RootTE) {
+          if (RHSTryOps.size() == 1 && RHSTryOps[0] == RootTE) {
+            CurFSI->ValidatedTryOperators.insert(RootTE);
+          } else {
+            for (auto *TE : RHSTryOps) {
+              if (TE != RootTE)
+                Diag(TE->getOperatorLoc(), diag::err_try_operator_nested);
+              else
+                CurFSI->ValidatedTryOperators.insert(TE);
+            }
+          }
+        }
+        return;
+      }
+    }
+  }
+
+  SmallVector<const TryExpr *, 4> TryOps;
+  collectTryOperators(E, TryOps);
+  if (TryOps.empty())
+    return;
+
+  const TryExpr *RootTE = extractTryOperatorChain(E);
+  if (RootTE) {
+    if (TryOps.size() == 1 && TryOps[0] == RootTE) {
+      CurFSI->ValidatedTryOperators.insert(RootTE);
+    } else {
+      for (auto *TE : TryOps) {
+        if (TE != RootTE)
+          Diag(TE->getOperatorLoc(), diag::err_try_operator_nested);
+        else
+          CurFSI->ValidatedTryOperators.insert(TE);
+      }
+    }
+  }
+}
+
+void Sema::ValidateTryOperatorInInit(Expr *Init) {
+  FunctionScopeInfo *CurFSI = getCurFunction();
+  if (!CurFSI || !Init)
+    return;
+
+  SmallVector<const TryExpr *, 4> TryOps;
+  collectTryOperators(Init, TryOps);
+  if (TryOps.empty())
+    return;
+
+  const TryExpr *RootTE = extractTryOperatorChain(Init);
+  if (RootTE) {
+    if (TryOps.size() == 1 && TryOps[0] == RootTE) {
+      CurFSI->ValidatedTryOperators.insert(RootTE);
+    } else {
+      for (auto *TE : TryOps) {
+        if (TE != RootTE)
+          Diag(TE->getOperatorLoc(), diag::err_try_operator_nested);
+        else
+          CurFSI->ValidatedTryOperators.insert(TE);
+      }
+    }
+  }
+}
+
+void Sema::ValidateTryOperatorInReturn(Expr *RetVal) {
+  FunctionScopeInfo *CurFSI = getCurFunction();
+  if (!CurFSI || !RetVal)
+    return;
+
+  SmallVector<const TryExpr *, 4> TryOps;
+  collectTryOperators(RetVal, TryOps);
+  if (TryOps.empty())
+    return;
+
+  const TryExpr *RootTE = extractTryOperatorChain(RetVal);
+  if (RootTE) {
+    if (TryOps.size() == 1 && TryOps[0] == RootTE) {
+      CurFSI->ValidatedTryOperators.insert(RootTE);
+    } else {
+      for (auto *TE : TryOps) {
+        if (TE != RootTE)
+          Diag(TE->getOperatorLoc(), diag::err_try_operator_nested);
+        else
+          CurFSI->ValidatedTryOperators.insert(TE);
+      }
+    }
+  }
+}
+
+void Sema::ValidateTryOperatorsInFunctionBody() {
+  FunctionScopeInfo *CurFSI = getCurFunction();
+  if (!CurFSI)
+    return;
+
+  for (const TryExpr *TE : CurFSI->TryOperators) {
+    if (!CurFSI->ValidatedTryOperators.count(TE)) {
+      Diag(TE->getOperatorLoc(), diag::err_try_operator_invalid_position);
+    }
+  }
+}
+
 bool Sema::isQualifiedMemberAccess(Expr *E) {
   if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E)) {
     if (!DRE->getQualifier())

@@ -174,6 +174,7 @@ public:
   UNARYOP_FALLBACK(Not)       UNARYOP_FALLBACK(LNot)
   UNARYOP_FALLBACK(Real)      UNARYOP_FALLBACK(Imag)
   UNARYOP_FALLBACK(Extension) UNARYOP_FALLBACK(Coawait)
+  UNARYOP_FALLBACK(Try)
 #undef UNARYOP_FALLBACK
 
   // Base case, ignore it. :)

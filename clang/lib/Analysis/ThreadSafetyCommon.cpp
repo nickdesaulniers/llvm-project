@@ -333,6 +333,8 @@ til::SExpr *SExprBuilder::translate(const Stmt *S, CallingContext *Ctx) {
     return translate(cast<ConstantExpr>(S)->getSubExpr(), Ctx);
   case Stmt::ParenExprClass:
     return translate(cast<ParenExpr>(S)->getSubExpr(), Ctx);
+  case Stmt::TryExprClass:
+    return translate(cast<TryExpr>(S)->getSubExpr(), Ctx);
   case Stmt::ExprWithCleanupsClass:
     return translate(cast<ExprWithCleanups>(S)->getSubExpr(), Ctx);
   case Stmt::CXXBindTemporaryExprClass:
