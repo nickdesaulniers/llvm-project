@@ -71,6 +71,7 @@
 #include "UseAnyOfAllOfCheck.h"
 #include "UseConcisePreprocessorDirectivesCheck.h"
 #include "UseStdMinMaxCheck.h"
+#include "UseTryOperatorCheck.h"
 
 namespace clang::tidy {
 namespace readability {
@@ -205,6 +206,8 @@ public:
         "readability-use-concise-preprocessor-directives");
     CheckFactories.registerCheck<UseStdMinMaxCheck>(
         "readability-use-std-min-max");
+    CheckFactories.registerCheck<UseTryOperatorCheck>(
+        "readability-use-try-operator");
   }
 };
 

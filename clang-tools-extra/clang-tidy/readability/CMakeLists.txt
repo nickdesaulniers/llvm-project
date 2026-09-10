@@ -69,6 +69,7 @@ add_clang_library(clangTidyReadabilityModule STATIC
   UseAnyOfAllOfCheck.cpp
   UseConcisePreprocessorDirectivesCheck.cpp
   UseStdMinMaxCheck.cpp
+  UseTryOperatorCheck.cpp
 
   LINK_LIBS
   clangTidy
