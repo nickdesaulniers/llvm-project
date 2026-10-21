@@ -13,6 +13,7 @@
 #include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/UniqueVector.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -375,7 +376,7 @@ class MemLocFragmentFill {
 
   /// Variables in VarsWithStackSlot that have at least one sub-variable
   /// fragment. Variables without fragments never need fragment filling.
-  DenseSet<DebugAggregate> FragmentedVars;
+  SmallDenseSet<DebugAggregate, 8> FragmentedVars;
 
   /// IDs for memory location base addresses in maps. Use 0 to indicate that
   /// there's no memory location.
@@ -902,30 +903,25 @@ public:
     // Prepare for traversal.
     //
     ReversePostOrderTraversal<Function *> RPOT(&Fn);
-    std::priority_queue<unsigned int, std::vector<unsigned int>,
-                        std::greater<unsigned int>>
+    std::priority_queue<unsigned, std::vector<unsigned>, std::greater<unsigned>>
         Worklist;
-    std::priority_queue<unsigned int, std::vector<unsigned int>,
-                        std::greater<unsigned int>>
+    std::priority_queue<unsigned, std::vector<unsigned>, std::greater<unsigned>>
         Pending;
-    DenseMap<unsigned int, BasicBlock *> OrderToBB;
-    DenseMap<BasicBlock *, unsigned int> BBToOrder;
-    { // Init OrderToBB and BBToOrder.
-      unsigned int RPONumber = 0;
-      for (BasicBlock *BB : RPOT) {
-        OrderToBB[RPONumber] = BB;
-        BBToOrder[BB] = RPONumber;
-        Worklist.push(RPONumber);
-        ++RPONumber;
-      }
+    SmallVector<BasicBlock *, 16> OrderToBB;
+    SmallDenseMap<const BasicBlock *, unsigned, 16> BBToOrder;
+    for (BasicBlock *BB : RPOT) {
+      unsigned RPONumber = OrderToBB.size();
+      OrderToBB.push_back(BB);
+      BBToOrder[BB] = RPONumber;
+      Worklist.push(RPONumber);
     }
     unsigned NumBlocks = OrderToBB.size();
-    BitVector OnWorklist(NumBlocks, true);
-    BitVector OnPending(NumBlocks, false);
+    SmallBitVector OnWorklist(NumBlocks, true);
+    SmallBitVector OnPending(NumBlocks, false);
 
     // Identify blocks reachable from backedges (the only blocks that can be
     // visited more than once).
-    BitVector CanRevisit(NumBlocks);
+    SmallBitVector CanRevisit(NumBlocks);
     SmallVector<unsigned, 16> BackedgeWorklist;
     for (unsigned RPO = 0; RPO < NumBlocks; ++RPO) {
       for (BasicBlock *Succ : successors(OrderToBB[RPO])) {
@@ -2517,22 +2513,17 @@ bool AssignmentTrackingLowering::run(FunctionVarLocsBuilder *FnVarLocsBuilder) {
 
   // Prepare for traversal.
   ReversePostOrderTraversal<Function *> RPOT(&Fn);
-  std::priority_queue<unsigned int, std::vector<unsigned int>,
-                      std::greater<unsigned int>>
+  std::priority_queue<unsigned, std::vector<unsigned>, std::greater<unsigned>>
       Worklist;
-  std::priority_queue<unsigned int, std::vector<unsigned int>,
-                      std::greater<unsigned int>>
+  std::priority_queue<unsigned, std::vector<unsigned>, std::greater<unsigned>>
       Pending;
-  DenseMap<unsigned int, BasicBlock *> OrderToBB;
-  DenseMap<BasicBlock *, unsigned int> BBToOrder;
-  { // Init OrderToBB and BBToOrder.
-    unsigned int RPONumber = 0;
-    for (BasicBlock *BB : RPOT) {
-      OrderToBB[RPONumber] = BB;
-      BBToOrder[BB] = RPONumber;
-      Worklist.push(RPONumber);
-      ++RPONumber;
-    }
+  SmallVector<BasicBlock *, 16> OrderToBB;
+  SmallDenseMap<const BasicBlock *, unsigned, 16> BBToOrder;
+  for (BasicBlock *BB : RPOT) {
+    unsigned RPONumber = OrderToBB.size();
+    OrderToBB.push_back(BB);
+    BBToOrder[BB] = RPONumber;
+    Worklist.push(RPONumber);
   }
 
   const unsigned NumBlocks = OrderToBB.size();
@@ -2541,7 +2532,7 @@ bool AssignmentTrackingLowering::run(FunctionVarLocsBuilder *FnVarLocsBuilder) {
   // so its LiveIn never needs to be stored, and any predecessor whose
   // successors all have !CanRevisit can free its LiveOut once all its
   // successors have been processed.
-  BitVector CanRevisit(NumBlocks);
+  SmallBitVector CanRevisit(NumBlocks);
   SmallVector<unsigned, 16> BackedgeWorklist;
   for (unsigned RPO = 0; RPO < NumBlocks; ++RPO) {
     BasicBlock *BB = OrderToBB[RPO];
