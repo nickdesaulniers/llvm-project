@@ -369,12 +369,13 @@ class MemLocFragmentFill {
   using BaseAddress = unsigned;
   using OffsetInBitsTy = unsigned;
   using FragTraits = IntervalMapHalfOpenInfo<OffsetInBitsTy>;
-  using FragsInMemMap = IntervalMap<
-      OffsetInBitsTy, BaseAddress,
-      IntervalMapImpl::NodeSizer<OffsetInBitsTy, BaseAddress>::LeafSize,
-      FragTraits>;
+  using FragsInMemMap = IntervalMap<OffsetInBitsTy, BaseAddress, 4, FragTraits>;
   FragsInMemMap::Allocator IntervalMapAlloc;
   using VarFragMap = DenseMap<unsigned, FragsInMemMap>;
+
+  /// Variables in VarsWithStackSlot that have at least one sub-variable
+  /// fragment. Variables without fragments never need fragment filling.
+  DenseSet<DebugAggregate> FragmentedVars;
 
   /// IDs for memory location base addresses in maps. Use 0 to indicate that
   /// there's no memory location.
@@ -486,7 +487,7 @@ class MemLocFragmentFill {
         // [ r ]
         LLVM_DEBUG(dbgs() << "- a is contained within "
                           << toString(FirstOverlap));
-        if (*AIt && *AIt == *FirstOverlap)
+        if (*AIt == *FirstOverlap)
           Result.insert(AIt.start(), AIt.stop(), *AIt);
       } else {
         // There's an overlap but `a` is not fully contained within
@@ -499,7 +500,7 @@ class MemLocFragmentFill {
         if (IntersectStart) {
           LLVM_DEBUG(dbgs() << "- insert intersection of a and "
                             << toString(FirstOverlap));
-          if (*AIt && *AIt == *FirstOverlap)
+          if (*AIt == *FirstOverlap)
             Result.insert(AIt.start(), FirstOverlap.stop(), *AIt);
           ++Next;
         }
@@ -510,7 +511,7 @@ class MemLocFragmentFill {
         if (IntersectEnd) {
           LLVM_DEBUG(dbgs() << "- insert intersection of a and "
                             << toString(LastOverlap));
-          if (*AIt && *AIt == *LastOverlap)
+          if (*AIt == *LastOverlap)
             Result.insert(LastOverlap.start(), AIt.stop(), *AIt);
         }
 
@@ -524,7 +525,7 @@ class MemLocFragmentFill {
                Next.stop() <= AIt.stop()) {
           LLVM_DEBUG(dbgs()
                      << "- insert intersection of a and " << toString(Next));
-          if (*AIt && *AIt == *Next)
+          if (*AIt == *Next)
             Result.insert(Next.start(), Next.stop(), *Next);
           ++Next;
         }
@@ -545,7 +546,7 @@ class MemLocFragmentFill {
       LLVM_DEBUG(dbgs() << "meet fragment maps for "
                         << Aggregates[Entry.first].first->getName() << "\n");
       Entry.second = meetFragments(Entry.second, BIt->second);
-      return false;
+      return Entry.second.empty();
     });
   }
 
@@ -617,13 +618,11 @@ class MemLocFragmentFill {
                     unsigned StartBit, unsigned EndBit, unsigned Base,
                     DebugLoc DL) {
     assert(StartBit < EndBit && "Cannot create fragment of size <= 0");
-    if (!Base)
-      return;
+    assert(Base && "Expected a non-zero ID for Base address");
     FragMemLoc Loc;
     Loc.Var = Var;
     Loc.OffsetInBits = StartBit;
     Loc.SizeInBits = EndBit - StartBit;
-    assert(Base && "Expected a non-zero ID for Base address");
     Loc.Base = Base;
     Loc.DL = DL;
     BBInsertBeforeMap[&BB][Before].push_back(Loc);
@@ -662,9 +661,9 @@ class MemLocFragmentFill {
     if (skipVariable(DbgVar.getVariable()))
       return;
     // Don't bother doing anything for this variables if we know it's fully
-    // promoted. We're only interested in variables that (sometimes) live on
-    // the stack here.
-    if (!VarsWithStackSlot->count(getAggregate(DbgVar)))
+    // promoted or never fragmented. We're only interested in fragmented
+    // variables that (sometimes) live on the stack here.
+    if (!FragmentedVars.count(getAggregate(DbgVar)))
       return;
     unsigned Var = Aggregates.insert(
         DebugAggregate(DbgVar.getVariable(), VarLoc.DL.getInlinedAt()));
@@ -706,6 +705,8 @@ class MemLocFragmentFill {
 
     // Check if the variable does not exist in the map.
     if (FragIt == LiveSet.end()) {
+      if (!Base)
+        return;
       // Add this variable to the BB map.
       auto P = LiveSet.try_emplace(Var, FragsInMemMap(IntervalMapAlloc));
       assert(P.second && "Var already in map?");
@@ -720,9 +721,11 @@ class MemLocFragmentFill {
     // intervals.
     if (!FragMap.overlaps(StartBit, EndBit)) {
       LLVM_DEBUG(dbgs() << "- No overlaps\n");
-      FragMap.insert(StartBit, EndBit, Base);
-      coalesceFragments(BB, Before, Var, StartBit, EndBit, Base, VarLoc.DL,
-                        FragMap);
+      if (Base) {
+        FragMap.insert(StartBit, EndBit, Base);
+        coalesceFragments(BB, Before, Var, StartBit, EndBit, Base, VarLoc.DL,
+                          FragMap);
+      }
       return;
     }
     // There is at least one overlap.
@@ -760,7 +763,8 @@ class MemLocFragmentFill {
                    VarLoc.DL);
 
       // Insert the new (middle) fragment now there is space.
-      FragMap.insert(StartBit, EndBit, Base);
+      if (Base)
+        FragMap.insert(StartBit, EndBit, Base);
     } else {
       // There's an overlap but `f` may not be fully contained within
       // `i`. Shorten any end-point intersections so that we can then
@@ -810,12 +814,17 @@ class MemLocFragmentFill {
       }
       // We've dealt with all the overlaps now!
       assert(!FragMap.overlaps(StartBit, EndBit));
-      LLVM_DEBUG(dbgs() << "- Insert DEF into now-empty space\n");
-      FragMap.insert(StartBit, EndBit, Base);
+      if (Base) {
+        LLVM_DEBUG(dbgs() << "- Insert DEF into now-empty space\n");
+        FragMap.insert(StartBit, EndBit, Base);
+      }
     }
 
-    coalesceFragments(BB, Before, Var, StartBit, EndBit, Base, VarLoc.DL,
-                      FragMap);
+    if (Base)
+      coalesceFragments(BB, Before, Var, StartBit, EndBit, Base, VarLoc.DL,
+                        FragMap);
+    else if (FragMap.empty())
+      LiveSet.erase(FragIt);
   }
 
   bool skipVariable(const DILocalVariable *V) { return !V->getSizeInBits(); }
@@ -870,6 +879,25 @@ public:
       return;
 
     this->FnVarLocs = FnVarLocs;
+
+    FragmentedVars.clear();
+    for (unsigned ID = 1, End = FnVarLocs->getNumVariables(); ID <= End; ++ID) {
+      const DebugVariable &DV =
+          FnVarLocs->getVariable(static_cast<VariableID>(ID));
+      if (skipVariable(DV.getVariable()))
+        continue;
+      auto Frag = DV.getFragment();
+      if (!Frag)
+        continue;
+      if (Frag->OffsetInBits != 0 ||
+          Frag->SizeInBits != *DV.getVariable()->getSizeInBits()) {
+        DebugAggregate Aggr = getAggregate(DV);
+        if (VarsWithStackSlot->count(Aggr))
+          FragmentedVars.insert(Aggr);
+      }
+    }
+    if (FragmentedVars.empty())
+      return;
 
     // Prepare for traversal.
     //
